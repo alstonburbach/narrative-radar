@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from app.collectors.market import fetch_market_data
+from app.database.db import initialize_database, save_market_snapshot
 
 
 def create_research_job(contract_address: str, chain: str) -> dict:
@@ -21,6 +22,8 @@ def print_section(title: str):
 def main():
     print_section("NARRATIVE RADAR V0.1")
 
+    initialize_database()
+
     contract = input("\nToken contract: ").strip()
     chain = input("Chain (base/bsc/solana/etc): ").strip()
 
@@ -35,7 +38,6 @@ def main():
 
     try:
         market = fetch_market_data(contract)
-
     except Exception as exc:
         print(f"\nMarket collector failed: {exc}")
         return
@@ -46,11 +48,15 @@ def main():
         print("No active DEX pair found for this contract.")
         return
 
+    snapshot_id = save_market_snapshot(market)
+    print(f"\nSnapshot permanently saved as #{snapshot_id}\n")
+
     for key, value in market.items():
         print(f"{key}: {value}")
 
     print_section("PIPELINE STATUS")
     print("Market Collector: COMPLETE")
+    print("Database: COMPLETE")
     print("Narrative Detective: NOT YET CONNECTED")
     print("Red Team: NOT YET CONNECTED")
     print("Scoring Engine: NOT YET CONNECTED")
