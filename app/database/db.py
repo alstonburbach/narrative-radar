@@ -1,6 +1,9 @@
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
+
+from app.database.models import Evidence
 
 
 DATABASE_PATH = Path("data/narrative_radar.db")
@@ -40,6 +43,24 @@ def initialize_database():
                 dex_url TEXT,
                 collected_at TEXT NOT NULL,
                 raw_json TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evidence_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contract_address TEXT NOT NULL,
+                claim TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                published_at TEXT,
+                author TEXT,
+                quote TEXT,
+                relevance TEXT,
+                confidence REAL NOT NULL,
+                discovered_at TEXT NOT NULL
             )
             """
         )
@@ -92,6 +113,43 @@ def save_market_snapshot(market: dict) -> int:
                 market.get("dex_url"),
                 market.get("collected_at"),
                 json.dumps(market),
+            ),
+        )
+
+        return cursor.lastrowid
+
+
+def save_evidence(contract_address: str, evidence: Evidence) -> int:
+    discovered_at = datetime.now(timezone.utc).isoformat()
+
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO evidence_items (
+                contract_address,
+                claim,
+                source_url,
+                source_type,
+                published_at,
+                author,
+                quote,
+                relevance,
+                confidence,
+                discovered_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                contract_address,
+                evidence.claim,
+                evidence.source_url,
+                evidence.source_type,
+                evidence.published_at,
+                evidence.author,
+                evidence.quote,
+                evidence.relevance,
+                evidence.confidence,
+                discovered_at,
             ),
         )
 
