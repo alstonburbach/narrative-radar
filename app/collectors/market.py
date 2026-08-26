@@ -1,5 +1,7 @@
-import requests
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import requests
 
 
 DEXSCREENER_TOKEN_URL = (
@@ -7,16 +9,79 @@ DEXSCREENER_TOKEN_URL = (
 )
 
 
-def fetch_market_data(contract_address: str) -> dict:
+CHAIN_ALIASES = {
+    "bnb": "bsc",
+    "binance": "bsc",
+    "binance-smart-chain": "bsc",
+    "eth": "ethereum",
+    "sol": "solana",
+    "arb": "arbitrum",
+    "matic": "polygon",
+    "op": "optimism",
+    "avax": "avalanche",
+}
+
+
+def normalize_chain(chain: Optional[str]) -> Optional[str]:
+    """Return a stable chain label for user input and DexScreener output."""
+
+    if chain is None:
+        return None
+
+    value = str(chain).strip().lower().replace("_", "-").replace(" ", "-")
+    if not value or value in {"any", "all", "*"}:
+        return None
+
+    return CHAIN_ALIASES.get(value, value)
+
+
+def _number(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _empty_market_result(
+    contract_address: str,
+    requested_chain: Optional[str],
+    reason: Optional[str] = None,
+    available_chains: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "found": False,
+        "contract_address": contract_address,
+        "requested_chain": requested_chain,
+        "collected_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if reason:
+        result["reason"] = reason
+    if available_chains:
+        result["available_chains"] = available_chains
+
+    return result
+
+
+def fetch_market_data(
+    contract_address: str,
+    requested_chain: Optional[str] = None,
+) -> dict:
     """
     Fetch live DEX market data for a token contract.
 
     Returns normalized data for the strongest-liquidity pair found.
     """
 
-    url = DEXSCREENER_TOKEN_URL.format(
-        contract_address=contract_address
-    )
+    contract_address = contract_address.strip()
+    if not contract_address:
+        raise ValueError("contract_address cannot be empty")
+
+    normalized_chain = normalize_chain(requested_chain)
+    url = DEXSCREENER_TOKEN_URL.format(contract_address=contract_address)
 
     response = requests.get(url, timeout=15)
     response.raise_for_status()
@@ -25,11 +90,34 @@ def fetch_market_data(contract_address: str) -> dict:
     pairs = payload.get("pairs") or []
 
     if not pairs:
-        return {
-            "found": False,
-            "contract_address": contract_address,
-            "collected_at": datetime.now(timezone.utc).isoformat(),
+        return _empty_market_result(
+            contract_address,
+            normalized_chain,
+            reason="no_pairs_found",
+        )
+
+    available_chains = sorted(
+        {
+            str(pair.get("chainId"))
+            for pair in pairs
+            if pair.get("chainId")
         }
+    )
+
+    if normalized_chain:
+        pairs = [
+            pair
+            for pair in pairs
+            if normalize_chain(pair.get("chainId")) == normalized_chain
+        ]
+
+        if not pairs:
+            return _empty_market_result(
+                contract_address,
+                normalized_chain,
+                reason="no_pair_on_requested_chain",
+                available_chains=available_chains,
+            )
 
     # Prefer the pair with the most USD liquidity.
     best_pair = max(
@@ -48,6 +136,7 @@ def fetch_market_data(contract_address: str) -> dict:
     return {
         "found": True,
         "contract_address": contract_address,
+        "requested_chain": normalized_chain,
         "token_name": base_token.get("name"),
         "token_symbol": base_token.get("symbol"),
         "chain": best_pair.get("chainId"),

@@ -10,6 +10,7 @@ class ResearchResult:
     snippet: str
     source: Optional[str] = None
     published_at: Optional[str] = None
+    author: Optional[str] = None
 
 
 class ResearchProvider(ABC):

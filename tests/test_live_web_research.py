@@ -1,7 +1,14 @@
+import os
+
+import pytest
+
 from app.collectors.web_research import TavilyResearchProvider
 
 
 def test_live_search():
+    if not os.getenv("TAVILY_API_KEY"):
+        pytest.skip("Set TAVILY_API_KEY to run the optional live research test")
+
     provider = TavilyResearchProvider()
 
     results = provider.search(
