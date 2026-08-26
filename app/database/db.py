@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -6,7 +7,9 @@ from pathlib import Path
 from app.database.models import Evidence
 
 
-DATABASE_PATH = Path("data/narrative_radar.db")
+DATABASE_PATH = Path(
+    os.getenv("NARRATIVE_RADAR_DB_PATH", "data/narrative_radar.db")
+)
 
 
 def get_connection():
@@ -61,6 +64,27 @@ def initialize_database():
                 relevance TEXT,
                 confidence REAL NOT NULL,
                 discovered_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paper_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contract_address TEXT NOT NULL,
+                token_symbol TEXT,
+                entry_price_usd REAL NOT NULL,
+                quantity REAL NOT NULL,
+                invested_usd REAL NOT NULL,
+                current_price_usd REAL NOT NULL,
+                current_value_usd REAL NOT NULL,
+                pnl_usd REAL NOT NULL,
+                pnl_pct REAL NOT NULL,
+                status TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                closed_at TEXT
             )
             """
         )
@@ -154,3 +178,152 @@ def save_evidence(contract_address: str, evidence: Evidence) -> int:
         )
 
         return cursor.lastrowid
+
+
+def list_evidence(contract_address: str):
+    """Return stored evidence for a contract in insertion order."""
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM evidence_items
+            WHERE contract_address = ?
+            ORDER BY id ASC
+            """,
+            (contract_address,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def save_paper_position(
+    contract_address: str,
+    token_symbol: str,
+    entry_price_usd: float,
+    quantity: float,
+    invested_usd: float,
+    opened_at: str,
+) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO paper_positions (
+                contract_address,
+                token_symbol,
+                entry_price_usd,
+                quantity,
+                invested_usd,
+                current_price_usd,
+                current_value_usd,
+                pnl_usd,
+                pnl_pct,
+                status,
+                opened_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+            """,
+            (
+                contract_address,
+                token_symbol,
+                entry_price_usd,
+                quantity,
+                invested_usd,
+                entry_price_usd,
+                invested_usd,
+                0.0,
+                0.0,
+                opened_at,
+                opened_at,
+            ),
+        )
+
+        return cursor.lastrowid
+
+
+def get_paper_position(position_id: int):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM paper_positions WHERE id = ?",
+            (position_id,),
+        ).fetchone()
+
+    return dict(row) if row else None
+
+
+def update_paper_position(
+    position_id: int,
+    current_price_usd: float,
+    updated_at: str,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE paper_positions
+            SET current_price_usd = ?,
+                current_value_usd = quantity * ?,
+                pnl_usd = (quantity * ?) - invested_usd,
+                pnl_pct = CASE
+                    WHEN invested_usd = 0 THEN 0
+                    ELSE (((quantity * ?) - invested_usd) / invested_usd) * 100
+                END,
+                updated_at = ?
+            WHERE id = ? AND status = 'open'
+            """,
+            (
+                current_price_usd,
+                current_price_usd,
+                current_price_usd,
+                current_price_usd,
+                updated_at,
+                position_id,
+            ),
+        )
+
+
+def close_paper_position(
+    position_id: int,
+    current_price_usd: float,
+    closed_at: str,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE paper_positions
+            SET current_price_usd = ?,
+                current_value_usd = quantity * ?,
+                pnl_usd = (quantity * ?) - invested_usd,
+                pnl_pct = CASE
+                    WHEN invested_usd = 0 THEN 0
+                    ELSE (((quantity * ?) - invested_usd) / invested_usd) * 100
+                END,
+                status = 'closed',
+                updated_at = ?,
+                closed_at = ?
+            WHERE id = ? AND status = 'open'
+            """,
+            (
+                current_price_usd,
+                current_price_usd,
+                current_price_usd,
+                current_price_usd,
+                closed_at,
+                closed_at,
+                position_id,
+            ),
+        )
+
+
+def list_open_paper_positions():
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM paper_positions
+            WHERE status = 'open'
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    return [dict(row) for row in rows]
