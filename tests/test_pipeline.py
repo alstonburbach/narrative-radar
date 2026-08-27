@@ -46,6 +46,8 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
     )
 
     assert report["status"] == "complete"
+    assert "decision_gate" in report
+    assert report["decision_gate"]["execution_enabled"] is False
     assert report["snapshot_id"] == 7
     assert report["narrative_run_id"] == 8
     assert report["narrative_history"]["state"] == "no_history"

@@ -4,6 +4,7 @@ from typing import Optional
 
 from app.pipeline import run_analysis
 from app.execution.order_preview import build_order_preview
+from app.scoring.decision_gate import evaluate_manual_review_gate
 
 
 def create_research_job(contract_address: str, chain: str) -> dict:
@@ -133,6 +134,18 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
     for warning in narrative_quality.get("warnings", []):
         print(f"- [evidence] {warning}")
     print(f"Risk level: {report['red_team']['risk_level']}")
+    decision_gate = report.get("decision_gate") or {}
+    print(f"Decision gate: {decision_gate.get('status', 'not_evaluated')}")
+    gate_requirements = {
+        item.get("name"): item
+        for item in decision_gate.get("requirements", [])
+    }
+    for requirement_name in decision_gate.get("failed_requirements", []):
+        requirement = gate_requirements.get(requirement_name, {})
+        print(
+            f"- [gate] {requirement_name}: "
+            f"{requirement.get('detail', 'Requirement needs review.')}"
+        )
     for flag in report["red_team"]["flags"]:
         print(f"- [{flag['severity']}] {flag['message']}")
     print(f"Research: {report['research']['status']} ({report['research']['result_count']} results)")
@@ -206,6 +219,13 @@ def main(argv=None) -> int:
         )
         if args.order_preview_usd is not None
         else None
+    )
+    report["decision_gate"] = evaluate_manual_review_gate(
+        market=report.get("market", {}),
+        score=report.get("score", {}),
+        narrative_quality=report.get("narrative_quality", {}),
+        red_team=report.get("red_team", {}),
+        order_preview=report.get("order_preview"),
     )
 
     if args.as_json:

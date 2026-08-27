@@ -20,6 +20,7 @@ from app.database.db import (
     save_market_snapshot,
     save_narrative_run,
 )
+from app.scoring.decision_gate import evaluate_manual_review_gate
 from app.scoring.narrative_score import score_radar
 from app.tracking.narrative_history import compare_narrative_history
 from app.tracking.adoption_history import compare_adoption_history
@@ -207,6 +208,16 @@ def run_analysis(
         if paper_usd is not None
         else {"status": "not_requested", "paper_only": True}
     )
+    red_team_report = {
+        **summarize_red_team(flags),
+        "flags": flags,
+    }
+    decision_gate = evaluate_manual_review_gate(
+        market=market,
+        score=score,
+        narrative_quality=narrative_quality,
+        red_team=red_team_report,
+    )
 
     report = {
         "status": "complete" if market.get("found") else "no_market_pair",
@@ -216,10 +227,8 @@ def run_analysis(
         "research": research,
         "narrative": report,
         "narrative_quality": narrative_quality,
-        "red_team": {
-            **summarize_red_team(flags),
-            "flags": flags,
-        },
+        "red_team": red_team_report,
+        "decision_gate": decision_gate,
         "score": score,
         "paper": paper,
         "onchain_activity": onchain_activity,

@@ -96,6 +96,8 @@ jobs:
               handle.write(f"- On-chain trend: `{onchain.get('history', {}).get('state', 'not_collected')}` across `{onchain.get('history', {}).get('run_count', 0)}` snapshots\\n")
               preview = report.get("order_preview") or {}
               handle.write(f"- Order preview: `{preview.get('status', 'not_requested')}`; snapshot age=`{preview.get('snapshot_age_seconds', 'n/a')}` seconds; manual approval=`{preview.get('manual_approval_required', False)}`; execution enabled=`{preview.get('execution_enabled', False)}`\\n")
+              gate = report.get("decision_gate", {})
+              handle.write(f"- Decision gate: `{gate.get('status', 'not_evaluated')}`; failed requirements=`{len(gate.get('failed_requirements', []))}`; order preview ready=`{gate.get('order_preview_ready', False)}`\\n")
               handle.write(f"- Risk: `{red_team.get('risk_level')}`\\n")
               handle.write(f"- Research: `{report.get('research', {}).get('status')}`\\n")
           PY

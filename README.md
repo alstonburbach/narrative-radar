@@ -16,6 +16,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
+- Applies a transparent manual-review gate that reports whether score, evidence quality, freshness, red-team risk, source checks, and optional order-preview requirements pass.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
@@ -55,6 +56,8 @@ Wallet reports also show the realized-PnL observation window, profitable calenda
 ## Manual order previews
 
 Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, a five-minute market-snapshot freshness gate, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
+
+The JSON report also includes `decision_gate`. `manual_review_ready` means the research requirements passed for a human to inspect; `research_only` means one or more non-blocking requirements still need work; `blocked` means a hard safety requirement failed. If no order preview is requested, the gate evaluates research only. The gate always reports `execution_enabled: false` and never authorizes a transaction.
 
 ## Run from GitHub Actions
 
