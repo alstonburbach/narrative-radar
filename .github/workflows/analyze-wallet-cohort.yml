@@ -1,0 +1,53 @@
+name: analyze wallet watchlist
+
+on:
+  workflow_dispatch:
+    inputs:
+      wallets:
+        description: Newline-separated Solana wallet addresses
+        required: true
+        type: string
+      limit:
+        description: Maximum finalized transactions per wallet
+        required: false
+        default: "500"
+        type: string
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    env:
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      WALLETS: ${{ inputs.wallets }}
+      LIMIT: ${{ inputs.limit }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-wallet-db-${{ github.run_id }}
+          restore-keys: narrative-radar-wallet-db-
+      - run: python -m pip install -r requirements.txt
+      - name: Analyze watchlist
+        run: python -m app.wallet_cohort_main --wallets "$WALLETS" --limit "$LIMIT" --json > wallet-watchlist.json
+      - name: Write job summary
+        run: |
+          python - <<'PY'
+          import json, os
+          with open("wallet-watchlist.json", encoding="utf-8") as f:
+              report = json.load(f)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("## Wallet watchlist\n\n")
+              f.write("| Wallet | Repeatability | State | Quality | Closed trades |\n|---|---|---|---:|---:|\n")
+              for item in report["wallets"]:
+                  h = item.get("wallet_history", {})
+                  p = item.get("pnl", {})
+                  f.write(f"| `{item['wallet_address']}` | `{h.get('strategy_classification', 'error')}` | `{h.get('state', 'error')}` | `{item.get('quality_score', '')}` | `{p.get('closed_trades', '')}` |\n")
+              f.write("\nThis is research-only. No trades are copied or executed.\n")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-wallet-watchlist
+          path: wallet-watchlist.json
