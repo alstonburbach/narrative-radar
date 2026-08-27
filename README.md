@@ -54,7 +54,7 @@ Wallet reports also show the realized-PnL observation window, profitable calenda
 
 ## Manual order previews
 
-Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
+Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, a five-minute market-snapshot freshness gate, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
 
 ## Run from GitHub Actions
 
