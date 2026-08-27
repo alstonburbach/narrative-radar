@@ -148,3 +148,30 @@ def test_signal_clustering_does_not_treat_subdomains_as_independent_sources():
     labels = {signal["label"] for signal in cluster_signal_terms(evidence)}
 
     assert "stablecoin rails" not in labels
+
+
+def test_signal_clustering_does_not_count_syndicated_copy_as_corroboration():
+    copied = (
+        "stablecoin rails now settle enterprise payments across supported "
+        "networks for twelve customers according to the company announcement"
+    )
+    evidence = [
+        {
+            "claim": "Stablecoin rails adoption",
+            "quote": copied,
+            "source_url": "https://one.example/story",
+            "source_type": "secondary_lead",
+            "research_lens": "adoption_usage",
+        },
+        {
+            "claim": "Stablecoin rails adoption",
+            "quote": copied,
+            "source_url": "https://two.example/story",
+            "source_type": "secondary_lead",
+            "research_lens": "funding_backers",
+        },
+    ]
+
+    labels = {signal["label"] for signal in cluster_signal_terms(evidence)}
+
+    assert "stablecoin rails" not in labels

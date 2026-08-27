@@ -60,6 +60,7 @@ jobs:
               handle.write(f"- Status: `{report.get('status')}`\\n")
               handle.write(f"- Evidence quality: `{quality.get('quality_score')}/100` ({quality.get('classification')})\\n")
               handle.write(f"- Independent domains: `{report.get('independent_domain_count')}`\\n")
+              handle.write(f"- Syndicated copies excluded: `{quality.get('syndication', {}).get('collapsed_source_count', 0)}` across `{quality.get('syndication', {}).get('cluster_count', 0)}` clusters\\n")
               handle.write(f"- Evidence freshness: `{quality.get('freshness', {}).get('status', 'unknown')}`; recent=`{quality.get('freshness', {}).get('recent_count', 0)}`, undated=`{quality.get('freshness', {}).get('undated_count', 0)}`\\n")
               handle.write(f"- Lead count: `{report.get('lead_count')}`\\n")
               handle.write("\\nCandidate signals:\\n")

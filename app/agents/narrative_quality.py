@@ -4,6 +4,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Mapping, Optional
 
 from app.research_domains import source_domain_family
+from app.research_independence import collapse_syndicated_evidence
 
 
 POSITIVE_LENSES = {
@@ -65,20 +66,22 @@ def assess_narrative_quality(
     primary-source workflow explicitly marks it as such.
     """
     items = list(evidence)
+    scored_items, syndication = collapse_syndicated_evidence(items)
     searched = set(searched_lenses)
-    domains = sorted({domain for domain in (_domain(_value(item, "source_url", "")) for item in items) if domain})
+    raw_domains = sorted({domain for domain in (_domain(_value(item, "source_url", "")) for item in items) if domain})
+    domains = sorted({domain for domain in (_domain(_value(item, "source_url", "")) for item in scored_items) if domain})
     lens_counts = Counter(
         _value(item, "research_lens")
-        for item in items
+        for item in scored_items
         if _value(item, "research_lens")
     )
     source_types = Counter(
         _value(item, "source_type") or "unknown"
-        for item in items
+        for item in scored_items
     )
     verified_primary = sum(
         1
-        for item in items
+        for item in scored_items
         if _value(item, "source_type") == "primary"
         and _value(item, "verification_status") == "verified"
         and (_number(_value(item, "confidence")) or 0) >= 0.75
@@ -98,7 +101,7 @@ def assess_narrative_quality(
     as_of_value = _datetime(as_of) or datetime.now(timezone.utc)
     published_dates = [
         published
-        for item in items
+        for item in scored_items
         if (published := _datetime(_value(item, "published_at"))) is not None
     ]
     future_cutoff = as_of_value + timedelta(days=1)
@@ -110,7 +113,7 @@ def assess_narrative_quality(
     ]
     recent_count = sum(age <= max(1, int(recent_days)) for age in ages_days)
     stale_count = sum(age > max(1, int(stale_days)) for age in ages_days)
-    if not items:
+    if not scored_items:
         freshness_status = "no_evidence"
     elif not published_dates:
         freshness_status = "unknown"
@@ -128,7 +131,7 @@ def assess_narrative_quality(
         "recent_window_days": max(1, int(recent_days)),
         "stale_after_days": max(1, int(stale_days)),
         "dated_count": len(published_dates),
-        "undated_count": len(items) - len(published_dates),
+        "undated_count": len(scored_items) - len(published_dates),
         "recent_count": recent_count,
         "stale_count": stale_count,
         "future_dated_count": future_dated_count,
@@ -160,16 +163,16 @@ def assess_narrative_quality(
         source_score = 15
     elif secondary_sources:
         source_score = 10
-    elif items:
+    elif scored_items:
         source_score = 4
     else:
         source_score = 0
 
     confidence_values = [
         max(0.0, min(1.0, _number(_value(item, "confidence")) or 0.0))
-        for item in items
+        for item in scored_items
     ]
-    identity_score = round((sum(confidence_values) / len(confidence_values)) * 15) if items else 0
+    identity_score = round((sum(confidence_values) / len(confidence_values)) * 15) if scored_items else 0
 
     process_score = 5 if "counterevidence" in searched else 0
     quality_score = min(
@@ -187,13 +190,13 @@ def assess_narrative_quality(
         classification = "insufficient_evidence"
 
     warnings = []
-    if not items:
+    if not scored_items:
         warnings.append("No research leads were collected.")
     if len(domains) < 2:
         warnings.append("Independent corroboration is not established yet.")
     if not (primary_candidates or onchain_sources or verified_primary):
         warnings.append("No likely primary-source or on-chain lead was found.")
-    if social_sources and social_sources >= max(1, len(items) / 2):
+    if social_sources and social_sources >= max(1, len(scored_items) / 2):
         warnings.append("Evidence is dominated by social or aggregator leads.")
     if counterevidence_leads:
         warnings.append("Counterevidence search returned leads that require manual review.")
@@ -201,9 +204,9 @@ def assess_narrative_quality(
         warnings.append("Counterevidence has not been searched yet.")
     if fetch_failures:
         warnings.append("Some high-value source leads could not be fetched for content checking.")
-    if items and not published_dates:
+    if scored_items and not published_dates:
         warnings.append("No lead supplied a publication date; evidence freshness is unknown.")
-    elif items and historical_dates and not recent_count:
+    elif scored_items and historical_dates and not recent_count:
         warnings.append(
             f"No dated evidence was published within the last {max(1, int(recent_days))} days."
         )
@@ -213,12 +216,20 @@ def assess_narrative_quality(
         )
     if future_dated_count:
         warnings.append("Some evidence has a future publication date and requires review.")
+    if syndication["collapsed_source_count"]:
+        warnings.append(
+            f'{syndication["collapsed_source_count"]} copied or syndicated source lead(s) '
+            "were excluded from independent corroboration."
+        )
 
     return {
         "quality_score": quality_score,
         "classification": classification,
         "independent_domains": domains,
         "independent_domain_count": len(domains),
+        "raw_independent_domains": raw_domains,
+        "raw_independent_domain_count": len(raw_domains),
+        "syndication": syndication,
         "lenses_covered": sorted(lens_counts),
         "positive_lenses_covered": positive_lenses,
         "source_breakdown": dict(source_types),

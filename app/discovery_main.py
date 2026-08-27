@@ -79,6 +79,12 @@ def main(argv=None) -> int:
         f"{quality['quality_score']}/100 ({quality['classification']})"
     )
     print(f"Independent domains: {report['independent_domain_count']}")
+    syndication = quality.get("syndication", {})
+    print(
+        "Syndicated copies excluded: "
+        f"{syndication.get('collapsed_source_count', 0)} "
+        f"across {syndication.get('cluster_count', 0)} cluster(s)"
+    )
     freshness = quality.get("freshness", {})
     print(
         "Evidence freshness: "

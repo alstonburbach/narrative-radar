@@ -65,6 +65,12 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         f"{narrative_quality.get('quality_score', 0)}/100 "
         f"({narrative_quality.get('classification', 'insufficient_evidence')})"
     )
+    syndication = narrative_quality.get("syndication", {})
+    print(
+        "Syndicated copies excluded: "
+        f"{syndication.get('collapsed_source_count', 0)} "
+        f"across {syndication.get('cluster_count', 0)} cluster(s)"
+    )
     freshness = narrative_quality.get("freshness", {})
     print(
         "Evidence freshness: "

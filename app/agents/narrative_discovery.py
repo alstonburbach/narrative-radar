@@ -2,6 +2,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Iterable, List, Optional
 from app.research_domains import source_domain_family
+from app.research_independence import collapse_syndicated_evidence
 import re
 
 from app.agents.narrative_detective import results_to_evidence
@@ -109,6 +110,7 @@ def cluster_signal_terms(
     These are candidate labels for human review, not automatically extracted
     claims about a project or sector.
     """
+    independent_evidence, _ = collapse_syndicated_evidence(evidence)
     signals = defaultdict(
         lambda: {
             "mentions": 0,
@@ -119,7 +121,7 @@ def cluster_signal_terms(
         }
     )
 
-    for item in evidence:
+    for item in independent_evidence:
         title = str(getattr(item, "claim", ""))
         quote = str(getattr(item, "quote", ""))
         if isinstance(item, dict):
@@ -263,13 +265,7 @@ def discover_narratives(
         "lenses": lens_reports,
         "searched_lenses": searched_lenses,
         "lead_count": len(evidence),
-        "independent_domain_count": len(
-            {
-                _domain(item.source_url)
-                for item in evidence
-                if _domain(item.source_url)
-            }
-        ),
+        "independent_domain_count": quality["independent_domain_count"],
         "candidate_signals": [
             {
                 **signal,

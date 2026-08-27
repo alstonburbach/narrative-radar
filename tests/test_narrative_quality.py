@@ -204,3 +204,74 @@ def test_quality_marks_all_old_dated_evidence_as_stale_only():
 
     assert result["freshness"]["status"] == "stale_only"
     assert result["freshness"]["stale_count"] == 1
+
+
+def test_quality_excludes_syndicated_excerpts_from_independence():
+    copied = (
+        "Acme announced its payment rails now process settlement for twelve "
+        "enterprise customers across three supported networks this quarter."
+    )
+    evidence = [
+        Evidence(
+            "Acme announcement",
+            "https://acme.example/news",
+            "primary_candidate",
+            quote=copied,
+            confidence=0.6,
+            research_lens="official_builders",
+        ),
+        Evidence(
+            "Wire copy",
+            "https://news-one.example/acme",
+            "secondary_lead",
+            quote=copied,
+            confidence=0.6,
+            research_lens="adoption_usage",
+        ),
+        Evidence(
+            "Another wire copy",
+            "https://news-two.example/acme",
+            "secondary_lead",
+            quote=copied,
+            confidence=0.6,
+            research_lens="funding_backers",
+        ),
+    ]
+
+    result = assess_narrative_quality(evidence)
+
+    assert result["raw_independent_domain_count"] == 3
+    assert result["independent_domain_count"] == 1
+    assert result["syndication"]["cluster_count"] == 1
+    assert result["syndication"]["collapsed_source_count"] == 2
+    assert result["classification"] == "insufficient_evidence"
+    assert any("syndicated" in warning for warning in result["warnings"])
+
+
+def test_quality_keeps_short_or_distinct_excerpts_independent():
+    evidence = [
+        Evidence(
+            "Usage report",
+            "https://one.example/report",
+            "secondary_lead",
+            quote="Acme usage grew.",
+            confidence=0.6,
+            research_lens="adoption_usage",
+        ),
+        Evidence(
+            "Builder report",
+            "https://two.example/report",
+            "primary_candidate",
+            quote=(
+                "Developers shipped a separate open source release with audited "
+                "code and documented upgrade controls for the protocol."
+            ),
+            confidence=0.6,
+            research_lens="official_builders",
+        ),
+    ]
+
+    result = assess_narrative_quality(evidence)
+
+    assert result["independent_domain_count"] == 2
+    assert result["syndication"]["collapsed_source_count"] == 0
