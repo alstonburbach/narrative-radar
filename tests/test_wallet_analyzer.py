@@ -95,6 +95,8 @@ def test_wallet_profile_rewards_profit_distributed_across_time():
     assert profile["observed_months"] == 3
     assert profile["profitable_months"] == 3
     assert profile["realized_roi_on_matched_cost_basis_pct"] == 10.0
+    assert profile["max_realized_drawdown"] == 0.0
+    assert profile["max_consecutive_losses"] == 0
     assert profile["style"] == "intraday_or_scalping"
     assert "profit_concentrated_in_few_periods" not in result["flags"]
 
@@ -126,6 +128,40 @@ def test_wallet_with_many_trades_in_one_short_window_is_not_steady():
     result = evaluate_wallet(swaps)
 
     assert "short_observation_window" in result["flags"]
+    assert result["research_candidate"] is False
+
+
+def test_wallet_with_large_realized_drawdown_is_not_steady():
+    swaps = []
+    for index in range(20):
+        day = index + 1
+        sell_value = 2 if index < 13 else 25
+        swaps.extend(
+            [
+                WalletSwap(
+                    f"2026-01-{day:02d}T00:00:00+00:00",
+                    f"buy-{index}",
+                    "TOKEN",
+                    "buy",
+                    1,
+                    10,
+                ),
+                WalletSwap(
+                    f"2026-01-{day:02d}T12:00:00+00:00",
+                    f"sell-{index}",
+                    "TOKEN",
+                    "sell",
+                    1,
+                    sell_value,
+                ),
+            ]
+        )
+
+    result = evaluate_wallet(swaps)
+    profile = result["pnl"]["strategy_profile"]
+
+    assert profile["max_realized_drawdown_on_matched_cost_basis_pct"] == 52.0
+    assert "large_realized_drawdown" in result["flags"]
     assert result["research_candidate"] is False
 
 

@@ -46,6 +46,10 @@ def _build_strategy_profile(
             "profitable_month_share_pct": None,
             "largest_profitable_month_share_pct": None,
             "realized_roi_on_matched_cost_basis_pct": None,
+            "max_realized_drawdown": 0.0,
+            "max_realized_drawdown_on_matched_cost_basis_pct": None,
+            "max_consecutive_losses": 0,
+            "largest_loss_share_pct": None,
             "median_holding_days": None,
             "average_holding_days": None,
             "trades_per_30d": None,
@@ -58,7 +62,25 @@ def _build_strategy_profile(
     active_days = set()
     dated = []
     holding_days = []
+    equity = 0.0
+    peak_equity = 0.0
+    max_drawdown = 0.0
+    current_loss_streak = 0
+    max_loss_streak = 0
+    gross_loss = 0.0
+    largest_loss = 0.0
     for record in records:
+        trade_pnl = record["pnl"]
+        equity += trade_pnl
+        peak_equity = max(peak_equity, equity)
+        max_drawdown = max(max_drawdown, peak_equity - equity)
+        if trade_pnl < 0:
+            current_loss_streak += 1
+            max_loss_streak = max(max_loss_streak, current_loss_streak)
+            gross_loss += abs(trade_pnl)
+            largest_loss = max(largest_loss, abs(trade_pnl))
+        else:
+            current_loss_streak = 0
         parsed = _timestamp_datetime(record.get("timestamp"))
         if parsed:
             dated.append(parsed)
@@ -109,6 +131,16 @@ def _build_strategy_profile(
             round(realized_pnl / matched_cost_basis * 100, 2)
             if matched_cost_basis > 0
             else None
+        ),
+        "max_realized_drawdown": round(max_drawdown, 8),
+        "max_realized_drawdown_on_matched_cost_basis_pct": (
+            round(max_drawdown / matched_cost_basis * 100, 2)
+            if matched_cost_basis > 0
+            else None
+        ),
+        "max_consecutive_losses": max_loss_streak,
+        "largest_loss_share_pct": (
+            round(largest_loss / gross_loss * 100, 2) if gross_loss else None
         ),
         "median_holding_days": median_holding_days,
         "average_holding_days": (
@@ -446,6 +478,14 @@ def evaluate_wallet(
         and strategy_profile["largest_profitable_month_share_pct"] > 75
     ):
         flags.append("profit_concentrated_in_few_periods")
+    if (
+        meaningful_trade_sample
+        and strategy_profile.get(
+            "max_realized_drawdown_on_matched_cost_basis_pct"
+        ) is not None
+        and strategy_profile["max_realized_drawdown_on_matched_cost_basis_pct"] > 50
+    ):
+        flags.append("large_realized_drawdown")
     comparable_profit = abs(profit_value or 0)
     if flow["external_inflow_usd"] > 0 and pnl["primary_quote_asset"] not in USD_LIKE_ASSETS:
         flags.append("external_flows_require_quote_conversion")

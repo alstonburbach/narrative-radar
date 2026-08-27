@@ -13,6 +13,7 @@ CONTAMINATION_FLAGS = {
     "profit_concentrated_in_few_trades",
     "profit_concentrated_in_few_periods",
     "short_observation_window",
+    "large_realized_drawdown",
 }
 
 
@@ -73,6 +74,7 @@ def _accounting_fingerprint(item: Mapping[str, Any]) -> tuple:
         profile.get("observed_span_days"),
         profile.get("profitable_months"),
         profile.get("realized_roi_on_matched_cost_basis_pct"),
+        profile.get("max_realized_drawdown_on_matched_cost_basis_pct"),
     )
 
 

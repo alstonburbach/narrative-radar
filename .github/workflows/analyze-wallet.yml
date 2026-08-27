@@ -57,6 +57,7 @@ jobs:
               handle.write(f"- Realized PnL by quote asset: `{pnl.get('realized_pnl_by_quote_asset')}`\\n")
               handle.write(f"- Largest winning trade share: `{(pnl.get('trade_pnl_stats') or {}).get('largest_win_share_pct')}`\\n")
               handle.write(f"- Observation window: `{profile.get('observed_span_days')}` days; profitable months=`{profile.get('profitable_months')}`; style=`{profile.get('style')}`\\n")
+              handle.write(f"- Max realized drawdown: `{profile.get('max_realized_drawdown')}` (`{profile.get('max_realized_drawdown_on_matched_cost_basis_pct')}`% of matched cost)\\n")
               handle.write(f"- External inflow: `${flow.get('external_inflow_usd', 0)}`\\n")
               handle.write(f"- Known inflow sources: `{flow.get('external_inflow_counterparty_count', 0)}`; largest source share=`{flow.get('largest_inflow_source_share_pct')}`\\n")
               handle.write(f"- Strategy repeatability: `{history.get('strategy_classification')}` / `{history.get('state')}` across `{history.get('run_count', 0)}` runs\\n")

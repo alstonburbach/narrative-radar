@@ -61,6 +61,11 @@ def main(argv=None):
             f"{profile.get('profitable_months', 'n/a')} profitable months / "
             f"{profile.get('style', 'n/a')}"
         )
+        print(
+            "Realized drawdown: "
+            f"{profile.get('max_realized_drawdown', 'n/a')} "
+            f"({profile.get('max_realized_drawdown_on_matched_cost_basis_pct', 'n/a')}% of matched cost)"
+        )
         flow = report.get("external_flow") or {}
         print(
             "External flow sources: "
