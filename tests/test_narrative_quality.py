@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app.agents.narrative_detective import results_to_evidence, run_lens_research
 from app.agents.narrative_quality import assess_narrative_quality
 from app.database.models import Evidence
@@ -129,3 +131,76 @@ def test_quality_collapses_subdomains_from_the_same_publisher_family():
 
     assert result["independent_domains"] == ["example.com", "independent.org"]
     assert result["independent_domain_count"] == 2
+
+def test_quality_reports_recent_stale_and_undated_evidence_separately():
+    evidence = [
+        Evidence(
+            "Recent usage",
+            "https://recent.example/report",
+            "secondary_lead",
+            published_at="2026-08-20T00:00:00Z",
+            retrieved_at="2026-08-27T00:00:00Z",
+            confidence=0.6,
+        ),
+        Evidence(
+            "Old docs",
+            "https://old.example/docs",
+            "primary_candidate",
+            published_at="2025-01-01",
+            confidence=0.6,
+        ),
+        Evidence(
+            "Undated page",
+            "https://undated.example/page",
+            "web_search",
+            retrieved_at="2026-08-27T00:00:00Z",
+            confidence=0.4,
+        ),
+    ]
+
+    result = assess_narrative_quality(
+        evidence,
+        as_of=datetime(2026, 8, 27, tzinfo=timezone.utc),
+    )
+    freshness = result["freshness"]
+
+    assert freshness["status"] == "recent_evidence_present"
+    assert freshness["dated_count"] == 2
+    assert freshness["undated_count"] == 1
+    assert freshness["recent_count"] == 1
+    assert freshness["stale_count"] == 1
+
+
+def test_quality_does_not_treat_retrieval_time_as_publication_time():
+    result = assess_narrative_quality(
+        [
+            Evidence(
+                "Undated page",
+                "https://example.com/page",
+                "web_search",
+                retrieved_at="2026-08-27T00:00:00Z",
+            )
+        ],
+        as_of=datetime(2026, 8, 27, tzinfo=timezone.utc),
+    )
+
+    assert result["freshness"]["status"] == "unknown"
+    assert result["freshness"]["recent_count"] == 0
+    assert any("freshness is unknown" in warning for warning in result["warnings"])
+
+
+def test_quality_marks_all_old_dated_evidence_as_stale_only():
+    result = assess_narrative_quality(
+        [
+            Evidence(
+                "Old report",
+                "https://example.com/report",
+                "secondary_lead",
+                published_at="2025-01-01",
+            )
+        ],
+        as_of=datetime(2026, 8, 27, tzinfo=timezone.utc),
+    )
+
+    assert result["freshness"]["status"] == "stale_only"
+    assert result["freshness"]["stale_count"] == 1

@@ -68,6 +68,7 @@ jobs:
               handle.write(f"- Radar score: `{score.get('radar_score')}` ({score.get('rating')})\\n")
               handle.write(f"- Narrative evidence: `{narrative.get('quality_score')}/100` ({narrative.get('classification')})\\n")
               handle.write(f"- Independent domains: `{narrative.get('independent_domain_count')}`\\n")
+              handle.write(f"- Evidence freshness: `{narrative.get('freshness', {}).get('status', 'unknown')}`; recent=`{narrative.get('freshness', {}).get('recent_count', 0)}`, undated=`{narrative.get('freshness', {}).get('undated_count', 0)}`\\n")
               handle.write(f"- Source content matches: `{narrative.get('content_matches')}`\\n")
               handle.write(f"- Counterevidence leads: `{narrative.get('counterevidence_leads')}`\\n")
               handle.write(f"- Evidence trend: `{history.get('state')}` across `{history.get('run_count')}` runs\\n")

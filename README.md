@@ -7,7 +7,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Pulls the strongest-liquidity DEX Screener pair for a contract.
 - Stores market snapshots and research evidence in SQLite.
 - Searches public web results through Tavily when `TAVILY_API_KEY` is configured.
-- Separates search leads from manually verified primary-source evidence.
+- Separates search leads from manually verified primary-source evidence and reports whether dated evidence is recent, stale, future-dated, or unavailable.
 - Searches separate lenses for builders, adoption, funding, token structure, and counterevidence, then measures source independence and corroboration.
 - Fetches selected primary/on-chain/secondary leads and checks whether the project identity appears in the underlying page, while keeping that content match separate from official verification.
 - Persists compact evidence snapshots and reports whether a narrative is strengthening, weakening, or still too new to judge across repeated runs.

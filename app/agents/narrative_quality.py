@@ -1,5 +1,8 @@
 from collections import Counter
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Mapping, Optional
+
 from app.research_domains import source_domain_family
 
 
@@ -28,9 +31,33 @@ def _number(value: Any) -> Optional[float]:
         return None
 
 
+def _datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(text)
+            except (TypeError, ValueError):
+                return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def assess_narrative_quality(
     evidence: Iterable[Any],
     searched_lenses: Iterable[str] = (),
+    as_of: Optional[datetime] = None,
+    recent_days: int = 45,
+    stale_days: int = 180,
 ) -> dict:
     """Score research quality, not token desirability or expected returns.
 
@@ -68,6 +95,50 @@ def assess_narrative_quality(
     fetch_failures = sum(
         1 for item in items if _value(item, "verification_status") == "fetch_failed"
     )
+    as_of_value = _datetime(as_of) or datetime.now(timezone.utc)
+    published_dates = [
+        published
+        for item in items
+        if (published := _datetime(_value(item, "published_at"))) is not None
+    ]
+    future_cutoff = as_of_value + timedelta(days=1)
+    historical_dates = [published for published in published_dates if published <= future_cutoff]
+    future_dated_count = len(published_dates) - len(historical_dates)
+    ages_days = [
+        max(0, int((as_of_value - published).total_seconds() // 86_400))
+        for published in historical_dates
+    ]
+    recent_count = sum(age <= max(1, int(recent_days)) for age in ages_days)
+    stale_count = sum(age > max(1, int(stale_days)) for age in ages_days)
+    if not items:
+        freshness_status = "no_evidence"
+    elif not published_dates:
+        freshness_status = "unknown"
+    elif not historical_dates:
+        freshness_status = "future_dated_only"
+    elif recent_count:
+        freshness_status = "recent_evidence_present"
+    elif stale_count == len(historical_dates):
+        freshness_status = "stale_only"
+    else:
+        freshness_status = "dated_but_not_recent"
+    freshness = {
+        "status": freshness_status,
+        "as_of": as_of_value.isoformat(),
+        "recent_window_days": max(1, int(recent_days)),
+        "stale_after_days": max(1, int(stale_days)),
+        "dated_count": len(published_dates),
+        "undated_count": len(items) - len(published_dates),
+        "recent_count": recent_count,
+        "stale_count": stale_count,
+        "future_dated_count": future_dated_count,
+        "newest_published_at": (
+            max(historical_dates).isoformat() if historical_dates else None
+        ),
+        "oldest_published_at": (
+            min(historical_dates).isoformat() if historical_dates else None
+        ),
+    }
 
     if len(positive_lenses) >= 4:
         breadth_score = 20
@@ -130,6 +201,18 @@ def assess_narrative_quality(
         warnings.append("Counterevidence has not been searched yet.")
     if fetch_failures:
         warnings.append("Some high-value source leads could not be fetched for content checking.")
+    if items and not published_dates:
+        warnings.append("No lead supplied a publication date; evidence freshness is unknown.")
+    elif items and historical_dates and not recent_count:
+        warnings.append(
+            f"No dated evidence was published within the last {max(1, int(recent_days))} days."
+        )
+    if historical_dates and stale_count >= max(1, len(historical_dates) / 2):
+        warnings.append(
+            f"At least half of dated evidence is older than {max(1, int(stale_days))} days."
+        )
+    if future_dated_count:
+        warnings.append("Some evidence has a future publication date and requires review.")
 
     return {
         "quality_score": quality_score,
@@ -143,6 +226,7 @@ def assess_narrative_quality(
         "content_matches": content_matches,
         "fetch_failures": fetch_failures,
         "counterevidence_leads": counterevidence_leads,
+        "freshness": freshness,
         "searched_lenses": sorted(searched),
         "warnings": warnings,
         "classification_only": True,

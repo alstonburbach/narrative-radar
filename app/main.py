@@ -65,6 +65,13 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         f"{narrative_quality.get('quality_score', 0)}/100 "
         f"({narrative_quality.get('classification', 'insufficient_evidence')})"
     )
+    freshness = narrative_quality.get("freshness", {})
+    print(
+        "Evidence freshness: "
+        f"{freshness.get('status', 'unknown')} / "
+        f"{freshness.get('recent_count', 0)} recent / "
+        f"{freshness.get('undated_count', 0)} undated"
+    )
     verification = report.get("research", {}).get("verification", {})
     print(
         "Source checks: "

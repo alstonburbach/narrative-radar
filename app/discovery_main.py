@@ -79,6 +79,13 @@ def main(argv=None) -> int:
         f"{quality['quality_score']}/100 ({quality['classification']})"
     )
     print(f"Independent domains: {report['independent_domain_count']}")
+    freshness = quality.get("freshness", {})
+    print(
+        "Evidence freshness: "
+        f"{freshness.get('status', 'unknown')} / "
+        f"{freshness.get('recent_count', 0)} recent / "
+        f"{freshness.get('undated_count', 0)} undated"
+    )
     history = report.get("discovery_history", {})
     print(
         "Scan durability: "
