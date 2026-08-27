@@ -11,11 +11,14 @@ from app.agents.red_team import run_red_team, summarize_red_team
 from app.collectors.market import fetch_market_data
 from app.collectors.source_verifier import verify_source_leads
 from app.database.db import (
+    get_narrative_history,
     initialize_database,
     save_evidence,
     save_market_snapshot,
+    save_narrative_run,
 )
 from app.scoring.narrative_score import score_radar
+from app.tracking.narrative_history import compare_narrative_history
 from app.tracking.paper_tracker import project_paper_position
 
 
@@ -114,7 +117,7 @@ def run_analysis(
         else {"status": "not_requested", "paper_only": True}
     )
 
-    return {
+    report = {
         "status": "complete" if market.get("found") else "no_market_pair",
         "started_at": started_at,
         "snapshot_id": snapshot_id,
@@ -130,3 +133,15 @@ def run_analysis(
         "paper": paper,
         "disclaimer": "Research and paper-analysis output only. No orders are placed and no return is guaranteed.",
     }
+    if persist and market.get("found"):
+        report["narrative_run_id"] = save_narrative_run(report)
+        history = get_narrative_history(contract_address)
+        report["narrative_history"] = compare_narrative_history(history)
+    else:
+        report["narrative_run_id"] = None
+        report["narrative_history"] = {
+            "state": "not_persisted",
+            "run_count": 0,
+            "note": "Enable persistence to compare evidence across repeated runs.",
+        }
+    return report

@@ -56,3 +56,43 @@ def test_initialize_database_migrates_and_persists_evidence_metadata(monkeypatch
         "official_builders",
         "2026-08-27T00:00:00+00:00",
     )
+
+
+def test_narrative_run_history_persists_compact_adoption_metrics(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "narrative.db")
+    db.initialize_database()
+    report = {
+        "started_at": "2026-08-27T00:00:00+00:00",
+        "market": {"contract_address": "0xtest", "chain": "base"},
+        "research": {"status": "complete"},
+        "narrative_quality": {
+            "quality_score": 61,
+            "classification": "corroborated_leads",
+            "independent_domain_count": 3,
+            "positive_lenses_covered": ["adoption_usage", "official_builders"],
+            "counterevidence_leads": 1,
+            "content_matches": 2,
+        },
+        "narrative": {
+            "verified_evidence": [],
+            "uncertain_evidence": [
+                {
+                    "research_lens": "adoption_usage",
+                    "verification_status": "content_match",
+                },
+                {
+                    "research_lens": "adoption_usage",
+                    "verification_status": "unverified_search_lead",
+                },
+            ],
+        },
+    }
+
+    run_id = db.save_narrative_run(report)
+    history = db.get_narrative_history("0xtest")
+
+    assert run_id == 1
+    assert len(history) == 1
+    assert history[0]["adoption_evidence_count"] == 2
+    assert history[0]["adoption_content_matches"] == 1
+    assert history[0]["counterevidence_leads"] == 1

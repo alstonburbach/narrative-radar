@@ -61,6 +61,12 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         f"{verification.get('content_matches', 0)} content matches / "
         f"{verification.get('fetch_failures', 0)} fetch failures"
     )
+    history = report.get("narrative_history", {})
+    print(
+        "Evidence trend: "
+        f"{history.get('state', 'not_persisted')} "
+        f"({history.get('run_count', 0)} runs)"
+    )
     for warning in narrative_quality.get("warnings", []):
         print(f"- [evidence] {warning}")
     print(f"Risk level: {report['red_team']['risk_level']}")

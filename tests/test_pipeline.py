@@ -35,6 +35,8 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
     monkeypatch.setattr("app.pipeline.initialize_database", lambda: None)
     monkeypatch.setattr("app.pipeline.save_market_snapshot", lambda value: 7)
     monkeypatch.setattr("app.pipeline.save_evidence", lambda *args: 1)
+    monkeypatch.setattr("app.pipeline.save_narrative_run", lambda value: 8)
+    monkeypatch.setattr("app.pipeline.get_narrative_history", lambda address: [])
 
     report = run_analysis(
         "0xtest",
@@ -45,6 +47,8 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
 
     assert report["status"] == "complete"
     assert report["snapshot_id"] == 7
+    assert report["narrative_run_id"] == 8
+    assert report["narrative_history"]["state"] == "no_history"
     assert report["research"]["result_count"] == 1
     assert report["narrative"]["evidence_count"] == 1
     assert report["paper"]["projections"][0]["estimated_value_usd"] == 200
