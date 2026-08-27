@@ -13,14 +13,6 @@ class ResearchResult:
 
 
 class ResearchProvider(ABC):
-
     @abstractmethod
-    def search(
-        self,
-        query: str,
-        limit: int = 10,
-    ) -> List[ResearchResult]:
-        """
-        Search public information and return normalized results.
-        """
+    def search(self, query: str, limit: int = 10) -> List[ResearchResult]:
         raise NotImplementedError
