@@ -1,0 +1,65 @@
+name: discover narratives
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Optional sector or theme to investigate
+        required: false
+        default: crypto narratives
+        type: string
+      chain:
+        description: Optional chain filter
+        required: false
+        default: unknown
+        type: string
+      limit:
+        description: Results per research lens
+        required: false
+        default: "5"
+        type: string
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    env:
+      TOPIC: ${{ inputs.topic }}
+      CHAIN: ${{ inputs.chain }}
+      LIMIT: ${{ inputs.limit }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Discover narrative leads
+        run: python -m app.discovery_main --topic "$TOPIC" --chain "$CHAIN" --limit "$LIMIT" --json > narrative-discovery.json
+      - name: Write job summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          with open("narrative-discovery.json", "r", encoding="utf-8") as handle:
+              report = json.load(handle)
+          quality = report.get("quality", {})
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write(f"## Narrative discovery: {report.get('topic')}\\n")
+              handle.write(f"- Status: `{report.get('status')}`\\n")
+              handle.write(f"- Evidence quality: `{quality.get('quality_score')}/100` ({quality.get('classification')})\\n")
+              handle.write(f"- Independent domains: `{report.get('independent_domain_count')}`\\n")
+              handle.write(f"- Lead count: `{report.get('lead_count')}`\\n")
+              handle.write("\\nCandidate signals:\\n")
+              for signal in report.get("candidate_signals", [])[:10]:
+                  handle.write(f"- `{signal.get('label')}` — domains={signal.get('independent_domains')}, lenses={signal.get('lenses')}\\n")
+              handle.write("\\nResults are unverified leads; no trade signal or order is produced.\\n")
+          PY
+      - name: Upload discovery report
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-discovery
+          path: narrative-discovery.json
