@@ -41,6 +41,8 @@ The `discover narratives` GitHub workflow runs manually and on weekdays at 12:00
 
 To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_main WALLET_ADDRESS`. SOL-quoted PnL is reported in SOL unless a historical quote-price resolver is added; it is never converted using today’s price.
 
+For a bounded research watchlist, run `python -m app.wallet_cohort_main --wallets "$WALLETS" --json`, where `WALLETS` is newline-separated. The cohort report ranks only wallets with repeated clean realized-PnL evidence, marks shorter histories as early-watch, and excludes contaminated, mixed, unchanged, or failed results from candidate ranking. A run accepts at most 50 wallets.
+
 Repeated wallet analyses use the same SQLite history to test whether positive realized PnL persists. A candidate is downgraded when cost basis is incomplete, quote assets are mixed without conversion, transfers are unpriced, or external inflows are large relative to realized PnL. Three clean positive snapshots are still only a research candidate—not a guarantee and never an automatic copy-trading instruction.
 
 ## Run from GitHub Actions
