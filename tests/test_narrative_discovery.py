@@ -73,3 +73,41 @@ def test_discovery_deduplicates_urls_and_reports_failed_lens():
     assert report["lead_count"] == 1
     assert report["quality"]["classification"] == "insufficient_evidence"
     assert report["quality"]["counterevidence_leads"] == 0
+
+
+def test_signal_clustering_rejects_social_only_or_counterevidence_only_terms():
+    social_only = [
+        {
+            "claim": "social hype",
+            "quote": "secret launch narrative",
+            "source_url": "https://x.com/example/1",
+            "source_type": "social_lead",
+            "research_lens": "adoption_usage",
+        },
+        {
+            "claim": "social hype",
+            "quote": "secret launch narrative",
+            "source_url": "https://reddit.com/example/1",
+            "source_type": "social_lead",
+            "research_lens": "counterevidence",
+        },
+    ]
+    counter_only = [
+        {
+            "claim": "security warning",
+            "quote": "security warning exploit risk",
+            "source_url": "https://example.com/warning",
+            "source_type": "secondary_lead",
+            "research_lens": "counterevidence",
+        },
+        {
+            "claim": "security warning",
+            "quote": "security warning criticism",
+            "source_url": "https://example.org/warning",
+            "source_type": "secondary_lead",
+            "research_lens": "counterevidence",
+        },
+    ]
+
+    assert cluster_signal_terms(social_only) == []
+    assert cluster_signal_terms(counter_only) == []

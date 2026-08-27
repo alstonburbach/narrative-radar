@@ -1,10 +1,19 @@
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from typing import Any, Iterable, List, Optional
 from urllib.parse import urlparse
 import re
 
 from app.agents.narrative_detective import results_to_evidence
 from app.agents.narrative_quality import assess_narrative_quality
+
+
+POSITIVE_DISCOVERY_LENSES = {
+    "official_builders",
+    "adoption_usage",
+    "funding_backers",
+    "onchain_tokenomics",
+}
 
 
 DISCOVERY_LENSES = {
@@ -106,6 +115,7 @@ def cluster_signal_terms(
             "domains": set(),
             "lenses": set(),
             "urls": set(),
+            "source_types": set(),
         }
     )
 
@@ -124,9 +134,11 @@ def cluster_signal_terms(
         )
         url = getattr(item, "source_url", "")
         lens = getattr(item, "research_lens", None)
+        source_type = getattr(item, "source_type", "unknown")
         if isinstance(item, dict):
             url = item.get("source_url", "")
             lens = item.get("research_lens")
+            source_type = item.get("source_type") or "unknown"
         domain = _domain(url)
         for phrase in phrases:
             signal = signals[phrase]
@@ -137,10 +149,16 @@ def cluster_signal_terms(
                 signal["lenses"].add(lens)
             if url:
                 signal["urls"].add(url)
+            if source_type:
+                signal["source_types"].add(source_type)
 
     candidates = []
     for label, signal in signals.items():
         if len(signal["domains"]) < min_domains or len(signal["lenses"]) < min_lenses:
+            continue
+        if not (signal["lenses"] & POSITIVE_DISCOVERY_LENSES):
+            continue
+        if not (signal["source_types"] - {"social_lead"}):
             continue
         score = min(
             100,
@@ -155,6 +173,10 @@ def cluster_signal_terms(
                 "mentions": signal["mentions"],
                 "independent_domains": sorted(signal["domains"]),
                 "lenses": sorted(signal["lenses"]),
+                "positive_lenses": sorted(
+                    signal["lenses"] & POSITIVE_DISCOVERY_LENSES
+                ),
+                "source_types": sorted(signal["source_types"]),
                 "evidence_urls": sorted(signal["urls"])[:5],
                 "classification_only": True,
             }
@@ -173,7 +195,9 @@ def discover_narratives(
     limit: int = 5,
 ) -> dict:
     """Search for emerging narrative leads before a contract is known."""
-    queries = build_discovery_queries(topic=topic, chain=chain)
+    started_at = datetime.now(timezone.utc).isoformat()
+    normalized_chain = (chain or "unknown").strip().lower()
+    queries = build_discovery_queries(topic=topic, chain=normalized_chain)
     anchor = (topic or "crypto narratives").strip()
     evidence = []
     seen_urls = set()
@@ -217,7 +241,8 @@ def discover_narratives(
     quality = assess_narrative_quality(evidence, searched_lenses=searched_lenses)
     return {
         "topic": anchor,
-        "chain": chain,
+        "chain": normalized_chain,
+        "started_at": started_at,
         "status": status,
         "queries": queries,
         "lenses": lens_reports,
