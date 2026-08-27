@@ -52,6 +52,11 @@ def compare_adoption_history(history: Iterable[Mapping[str, Any]]) -> dict:
     first = items[0]
     last = items[-1]
     holder_count = _delta(first, last, "holder_count")
+    supply_coverage = _delta(first, last, "scanned_supply_coverage_pct")
+    largest_owner_share = _delta(
+        first, last, "largest_scanned_owner_share_pct"
+    )
+    top_10_owner_share = _delta(first, last, "top_10_scanned_owner_share_pct")
     transfer_transactions = _delta(
         first, last, "transfer_transaction_count_24h"
     )
@@ -92,6 +97,9 @@ def compare_adoption_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "first_run_at": first.get("observed_at"),
         "last_run_at": last.get("observed_at"),
         "holder_count": holder_count,
+        "scanned_supply_coverage_pct": supply_coverage,
+        "largest_scanned_owner_share_pct": largest_owner_share,
+        "top_10_scanned_owner_share_pct": top_10_owner_share,
         "transfer_transaction_count_24h": transfer_transactions,
         "transfer_event_count_24h": transfer_events,
         "unique_active_wallets_24h": active_wallets,

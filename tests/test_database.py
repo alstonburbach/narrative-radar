@@ -114,6 +114,11 @@ def test_onchain_activity_history_persists_descriptive_metrics(monkeypatch, tmp_
         "holder_scan_returned": 15,
         "holder_scan_complete": False,
         "last_indexed_slot": 123,
+        "scanned_token_amount_raw": "500000",
+        "scanned_supply_coverage_pct": 50.0,
+        "largest_scanned_owner_share_pct": 30.0,
+        "top_10_scanned_owner_share_pct": 45.0,
+        "holder_concentration_is_lower_bound": True,
         "token_supply": 1000,
         "token_supply_raw": "1000000",
         "token_decimals": 3,
@@ -136,6 +141,9 @@ def test_onchain_activity_history_persists_descriptive_metrics(monkeypatch, tmp_
     assert history[0]["holder_count_is_lower_bound"] == 1
     assert history[0]["transfer_event_count_24h"] == 13
     assert history[0]["unique_active_wallets_24h"] == 7
+    assert history[0]["scanned_supply_coverage_pct"] == 50.0
+    assert history[0]["largest_scanned_owner_share_pct"] == 30.0
+    assert history[0]["holder_concentration_is_lower_bound"] == 1
 
 
 def test_discovery_history_persists_compact_signal_labels(monkeypatch, tmp_path):

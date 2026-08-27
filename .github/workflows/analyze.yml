@@ -72,6 +72,7 @@ jobs:
               handle.write(f"- Counterevidence leads: `{narrative.get('counterevidence_leads')}`\\n")
               handle.write(f"- Evidence trend: `{history.get('state')}` across `{history.get('run_count')}` runs\\n")
               handle.write(f"- On-chain activity: `{onchain.get('status')}`; holders=`{onchain.get('holder_count', 'n/a')}`, transfer txns=`{onchain.get('transfer_transaction_count_24h', 'n/a')}`, active owners=`{onchain.get('unique_active_wallets_24h', 'n/a')}`\\n")
+              handle.write(f"- Scanned supply coverage: `{onchain.get('scanned_supply_coverage_pct', 'n/a')}`; largest scanned owner share=`{onchain.get('largest_scanned_owner_share_pct', 'n/a')}`\\n")
               handle.write(f"- On-chain trend: `{onchain.get('history', {}).get('state', 'not_collected')}` across `{onchain.get('history', {}).get('run_count', 0)}` snapshots\\n")
               handle.write(f"- Risk: `{red_team.get('risk_level')}`\\n")
               handle.write(f"- Research: `{report.get('research', {}).get('status')}`\\n")

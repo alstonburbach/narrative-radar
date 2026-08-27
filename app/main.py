@@ -86,6 +86,14 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
             f"{onchain.get('unique_active_wallets_24h', 'n/a')} active owners "
             f"({onchain.get('status')})"
         )
+        if onchain.get("scanned_supply_coverage_pct") is not None:
+            qualifier = " lower-bound" if onchain.get("holder_concentration_is_lower_bound") else ""
+            print(
+                "Holder distribution proxy: "
+                f"{onchain['scanned_supply_coverage_pct']:.2f}% supply scanned / "
+                f"largest scanned owner {onchain.get('largest_scanned_owner_share_pct', 'n/a')}%"
+                f"{qualifier}"
+            )
         activity_history = onchain.get("history", {})
         print(
             "On-chain trend: "

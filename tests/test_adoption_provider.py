@@ -103,6 +103,10 @@ def test_helius_adoption_provider_collects_holders_supply_and_bounded_activity()
     assert snapshot["token_account_count"] == 2
     assert snapshot["holder_scan_complete"] is True
     assert snapshot["token_supply"] == 0.000125
+    assert snapshot["scanned_supply_coverage_pct"] == 100.0
+    assert snapshot["largest_scanned_owner_share_pct"] == 100.0
+    assert snapshot["top_10_scanned_owner_share_pct"] == 100.0
+    assert snapshot["holder_concentration_is_lower_bound"] is False
     assert snapshot["transfer_transaction_count_24h"] == 2
     assert snapshot["transfer_event_count_24h"] == 3
     assert snapshot["unique_active_wallets_24h"] == 3

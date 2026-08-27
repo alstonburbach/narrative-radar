@@ -2,6 +2,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Optional
 
 import requests
@@ -33,6 +34,15 @@ def _integer(value: Any) -> Optional[int]:
     return int(number) if number is not None else None
 
 
+def _decimal(value: Any) -> Optional[Decimal]:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value).replace(",", ""))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
 @dataclass
 class OnchainActivitySnapshot:
     """A bounded snapshot of token ownership and transfer activity.
@@ -53,6 +63,11 @@ class OnchainActivitySnapshot:
     holder_scan_total: Optional[int] = None
     holder_scan_returned: int = 0
     holder_scan_complete: Optional[bool] = None
+    scanned_token_amount_raw: Optional[str] = None
+    scanned_supply_coverage_pct: Optional[float] = None
+    largest_scanned_owner_share_pct: Optional[float] = None
+    top_10_scanned_owner_share_pct: Optional[float] = None
+    holder_concentration_is_lower_bound: bool = False
     last_indexed_slot: Optional[int] = None
     token_supply: Optional[float] = None
     token_supply_raw: Optional[str] = None
@@ -143,6 +158,9 @@ class HeliusAdoptionProvider(AdoptionProvider):
         accounts = []
         owners = set()
         unknown_owner_rows = 0
+        unknown_amount_rows = 0
+        owner_balances: dict[str, Decimal] = {}
+        scanned_token_amount = Decimal("0")
         total = None
         last_indexed_slot = None
 
@@ -170,11 +188,18 @@ class HeliusAdoptionProvider(AdoptionProvider):
                 if not isinstance(account, dict):
                     continue
                 accounts.append(account)
-                if _number(account.get("amount")) is not None and _number(account.get("amount")) <= 0:
+                amount = _decimal(account.get("amount"))
+                if amount is None:
+                    unknown_amount_rows += 1
+                if amount is not None and amount <= 0:
                     continue
+                if amount is not None:
+                    scanned_token_amount += amount
                 owner = str(account.get("owner") or "").strip()
                 if owner:
                     owners.add(owner)
+                    if amount is not None:
+                        owner_balances[owner] = owner_balances.get(owner, Decimal("0")) + amount
                 else:
                     unknown_owner_rows += 1
                 if len(accounts) >= max_accounts:
@@ -189,6 +214,7 @@ class HeliusAdoptionProvider(AdoptionProvider):
         complete = total is not None and len(accounts) >= total
         if total is None and len(accounts) < max_accounts:
             complete = True
+        owner_amounts = sorted(owner_balances.values(), reverse=True)
         return {
             "holder_count": len(owners),
             "token_account_count": len(accounts),
@@ -197,6 +223,10 @@ class HeliusAdoptionProvider(AdoptionProvider):
             "complete": bool(complete),
             "last_indexed_slot": last_indexed_slot,
             "unknown_owner_rows": unknown_owner_rows,
+            "unknown_amount_rows": unknown_amount_rows,
+            "scanned_token_amount_raw": str(scanned_token_amount),
+            "largest_owner_amount_raw": str(owner_amounts[0]) if owner_amounts else None,
+            "top_10_owner_amount_raw": str(sum(owner_amounts[:10])) if owner_amounts else None,
         }
 
     def _fetch_supply(self, token_address: str) -> dict:
@@ -356,6 +386,7 @@ class HeliusAdoptionProvider(AdoptionProvider):
             return snapshot.to_dict()
 
         successful_sections = 0
+        holders = {}
         try:
             holders = self._fetch_holder_accounts(token_address, holder_limit)
             snapshot.holder_count = holders["holder_count"]
@@ -365,6 +396,12 @@ class HeliusAdoptionProvider(AdoptionProvider):
             snapshot.holder_scan_complete = holders["complete"]
             snapshot.last_indexed_slot = holders["last_indexed_slot"]
             snapshot.holder_count_is_lower_bound = not holders["complete"]
+            snapshot.holder_concentration_is_lower_bound = not holders["complete"]
+            snapshot.scanned_token_amount_raw = holders["scanned_token_amount_raw"]
+            if holders["unknown_amount_rows"]:
+                snapshot.warnings.append(
+                    "Some token accounts had no parseable amount; supply coverage and concentration are incomplete."
+                )
             if holders["unknown_owner_rows"]:
                 snapshot.warnings.append(
                     "Some nonzero token accounts had no owner field and were excluded from the holder count."
@@ -379,6 +416,17 @@ class HeliusAdoptionProvider(AdoptionProvider):
 
         try:
             snapshot.__dict__.update(self._fetch_supply(token_address))
+            supply = _decimal(snapshot.token_supply_raw)
+            scanned = _decimal(snapshot.scanned_token_amount_raw)
+            largest = _decimal(holders.get("largest_owner_amount_raw"))
+            top_10 = _decimal(holders.get("top_10_owner_amount_raw"))
+            if supply is not None and supply > 0:
+                if scanned is not None:
+                    snapshot.scanned_supply_coverage_pct = round(float(scanned / supply * 100), 4)
+                if largest is not None:
+                    snapshot.largest_scanned_owner_share_pct = round(float(largest / supply * 100), 4)
+                if top_10 is not None:
+                    snapshot.top_10_scanned_owner_share_pct = round(float(top_10 / supply * 100), 4)
             successful_sections += 1
         except Exception as exc:
             snapshot.warnings.append(f"Token supply was unavailable: {exc}")

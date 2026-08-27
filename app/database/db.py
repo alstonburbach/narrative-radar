@@ -101,6 +101,11 @@ def initialize_database():
                 holder_scan_returned INTEGER NOT NULL DEFAULT 0,
                 holder_scan_complete INTEGER,
                 last_indexed_slot INTEGER,
+                scanned_token_amount_raw TEXT,
+                scanned_supply_coverage_pct REAL,
+                largest_scanned_owner_share_pct REAL,
+                top_10_scanned_owner_share_pct REAL,
+                holder_concentration_is_lower_bound INTEGER NOT NULL DEFAULT 0,
                 token_supply REAL,
                 token_supply_raw TEXT,
                 token_decimals INTEGER,
@@ -176,6 +181,22 @@ def initialize_database():
             if column not in existing_columns:
                 conn.execute(
                     f"ALTER TABLE evidence_items ADD COLUMN {column} {definition}"
+                )
+        existing_onchain_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(onchain_activity_snapshots)")
+        }
+        onchain_migrations = {
+            "scanned_token_amount_raw": "TEXT",
+            "scanned_supply_coverage_pct": "REAL",
+            "largest_scanned_owner_share_pct": "REAL",
+            "top_10_scanned_owner_share_pct": "REAL",
+            "holder_concentration_is_lower_bound": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column, definition in onchain_migrations.items():
+            if column not in existing_onchain_columns:
+                conn.execute(
+                    f"ALTER TABLE onchain_activity_snapshots ADD COLUMN {column} {definition}"
                 )
 
 
@@ -346,6 +367,13 @@ def save_onchain_activity_snapshot(snapshot: dict) -> int:
         "holder_scan_returned": snapshot.get("holder_scan_returned") or 0,
         "holder_scan_complete": snapshot.get("holder_scan_complete"),
         "last_indexed_slot": snapshot.get("last_indexed_slot"),
+        "scanned_token_amount_raw": snapshot.get("scanned_token_amount_raw"),
+        "scanned_supply_coverage_pct": snapshot.get("scanned_supply_coverage_pct"),
+        "largest_scanned_owner_share_pct": snapshot.get("largest_scanned_owner_share_pct"),
+        "top_10_scanned_owner_share_pct": snapshot.get("top_10_scanned_owner_share_pct"),
+        "holder_concentration_is_lower_bound": bool(
+            snapshot.get("holder_concentration_is_lower_bound")
+        ),
         "token_supply": snapshot.get("token_supply"),
         "token_supply_raw": snapshot.get("token_supply_raw"),
         "token_decimals": snapshot.get("token_decimals"),
@@ -368,13 +396,16 @@ def save_onchain_activity_snapshot(snapshot: dict) -> int:
                 token_address, chain, observed_at, status, source,
                 holder_count, holder_count_is_lower_bound, token_account_count,
                 holder_scan_total, holder_scan_returned, holder_scan_complete,
-                last_indexed_slot, token_supply, token_supply_raw, token_decimals,
+                last_indexed_slot, scanned_token_amount_raw,
+                scanned_supply_coverage_pct, largest_scanned_owner_share_pct,
+                top_10_scanned_owner_share_pct, holder_concentration_is_lower_bound,
+                token_supply, token_supply_raw, token_decimals,
                 activity_window_hours, transfer_transaction_count_24h,
                 transfer_event_count_24h, unique_active_wallets_24h,
                 unique_inflow_wallets_24h, unique_outflow_wallets_24h,
                 transfer_scan_returned, transfer_scan_limit,
                 transfer_scan_truncated, raw_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 metrics["token_address"],
@@ -391,6 +422,11 @@ def save_onchain_activity_snapshot(snapshot: dict) -> int:
                 if metrics["holder_scan_complete"] is None
                 else int(bool(metrics["holder_scan_complete"])),
                 metrics["last_indexed_slot"],
+                metrics["scanned_token_amount_raw"],
+                metrics["scanned_supply_coverage_pct"],
+                metrics["largest_scanned_owner_share_pct"],
+                metrics["top_10_scanned_owner_share_pct"],
+                int(metrics["holder_concentration_is_lower_bound"]),
                 metrics["token_supply"],
                 metrics["token_supply_raw"],
                 metrics["token_decimals"],
@@ -422,7 +458,10 @@ def get_onchain_activity_history(
             SELECT id, token_address, chain, observed_at, status, source,
                    holder_count, holder_count_is_lower_bound, token_account_count,
                    holder_scan_total, holder_scan_returned, holder_scan_complete,
-                   last_indexed_slot, token_supply, token_supply_raw, token_decimals,
+                   last_indexed_slot, scanned_token_amount_raw,
+                   scanned_supply_coverage_pct, largest_scanned_owner_share_pct,
+                   top_10_scanned_owner_share_pct, holder_concentration_is_lower_bound,
+                   token_supply, token_supply_raw, token_decimals,
                    activity_window_hours, transfer_transaction_count_24h,
                    transfer_event_count_24h, unique_active_wallets_24h,
                    unique_inflow_wallets_24h, unique_outflow_wallets_24h,
@@ -479,138 +518,3 @@ def save_discovery_run(report: dict) -> int:
                 metrics["classification"],
                 metrics["independent_domain_count"],
                 metrics["lead_count"],
-                metrics["candidate_signal_count"],
-                metrics["searched_lens_count"],
-                metrics["failed_lens_count"],
-                json.dumps(metrics["candidate_signal_labels"]),
-                json.dumps(metrics),
-            ),
-        )
-        return cursor.lastrowid
-
-
-def get_discovery_history(
-    topic: str,
-    chain: str = "unknown",
-    limit: int = 20,
-) -> list[dict]:
-    limit = max(1, min(int(limit), 200))
-    chain = (chain or "unknown").strip().lower()
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, topic, chain, started_at, status, quality_score,
-                   classification, independent_domain_count, lead_count,
-                   candidate_signal_count, searched_lens_count,
-                   failed_lens_count, candidate_signal_labels
-            FROM discovery_runs
-            WHERE topic = ? AND chain = ?
-            ORDER BY started_at DESC
-            LIMIT ?
-            """,
-            (topic, chain, limit),
-        ).fetchall()
-    history = []
-    for row in reversed(rows):
-        item = dict(row)
-        try:
-            item["candidate_signal_labels"] = json.loads(
-                item.get("candidate_signal_labels") or "[]"
-            )
-        except (TypeError, json.JSONDecodeError):
-            item["candidate_signal_labels"] = []
-        history.append(item)
-    return history
-
-
-def save_wallet_run(report: dict) -> int:
-    """Persist compact wallet accounting metrics for repeatability checks."""
-    pnl = report.get("pnl") or {}
-    flow = report.get("external_flow") or {}
-    flags = report.get("flags") or []
-    metrics = {
-        "wallet_address": report.get("wallet_address"),
-        "analyzed_at": report.get("analyzed_at") or datetime.now(timezone.utc).isoformat(),
-        "quality_score": report.get("quality_score"),
-        "research_candidate": bool(report.get("research_candidate")),
-        "copy_trade_ready": bool(report.get("copy_trade_ready")),
-        "closed_trades": pnl.get("closed_trades") or 0,
-        "wins": pnl.get("wins") or 0,
-        "losses": pnl.get("losses") or 0,
-        "primary_realized_pnl": pnl.get("primary_realized_pnl"),
-        "primary_quote_asset": pnl.get("primary_quote_asset"),
-        "realized_pnl_usd": pnl.get("realized_pnl_usd"),
-        "external_inflow_usd": flow.get("external_inflow_usd") or 0,
-        "external_outflow_usd": flow.get("external_outflow_usd") or 0,
-        "unmatched_sell_value_usd": pnl.get("unmatched_sell_value_usd"),
-        "profit_factor": pnl.get("profit_factor"),
-        "win_rate_pct": pnl.get("win_rate_pct"),
-        "quote_assets": pnl.get("quote_assets") or [],
-        "flags": flags,
-    }
-    if not metrics["wallet_address"]:
-        raise ValueError("wallet_address is required")
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO wallet_runs (
-                wallet_address, analyzed_at, quality_score, research_candidate,
-                copy_trade_ready, closed_trades, wins, losses,
-                primary_realized_pnl, primary_quote_asset, realized_pnl_usd,
-                external_inflow_usd, external_outflow_usd, unmatched_sell_value_usd,
-                profit_factor, win_rate_pct, quote_assets, flags, raw_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                metrics["wallet_address"],
-                metrics["analyzed_at"],
-                metrics["quality_score"],
-                int(metrics["research_candidate"]),
-                int(metrics["copy_trade_ready"]),
-                metrics["closed_trades"],
-                metrics["wins"],
-                metrics["losses"],
-                metrics["primary_realized_pnl"],
-                metrics["primary_quote_asset"],
-                metrics["realized_pnl_usd"],
-                metrics["external_inflow_usd"],
-                metrics["external_outflow_usd"],
-                metrics["unmatched_sell_value_usd"],
-                metrics["profit_factor"],
-                metrics["win_rate_pct"],
-                json.dumps(metrics["quote_assets"]),
-                json.dumps(metrics["flags"]),
-                json.dumps(metrics),
-            ),
-        )
-        return cursor.lastrowid
-
-
-def get_wallet_history(wallet_address: str, limit: int = 20) -> list[dict]:
-    limit = max(1, min(int(limit), 200))
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, wallet_address, analyzed_at, quality_score,
-                   research_candidate, copy_trade_ready, closed_trades, wins,
-                   losses, primary_realized_pnl, primary_quote_asset,
-                   realized_pnl_usd, external_inflow_usd, external_outflow_usd,
-                   unmatched_sell_value_usd, profit_factor, win_rate_pct,
-                   quote_assets, flags
-            FROM wallet_runs
-            WHERE wallet_address = ?
-            ORDER BY analyzed_at DESC
-            LIMIT ?
-            """,
-            (wallet_address, limit),
-        ).fetchall()
-    history = []
-    for row in reversed(rows):
-        item = dict(row)
-        for key in ("quote_assets", "flags"):
-            try:
-                item[key] = json.loads(item.get(key) or "[]")
-            except (TypeError, json.JSONDecodeError):
-                item[key] = []
-        history.append(item)
-    return history

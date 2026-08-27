@@ -38,6 +38,8 @@ Repeated token analyses use the local SQLite history to compare evidence quality
 
 When `HELIUS_API_KEY` is configured, Solana token analyses also collect a bounded on-chain snapshot. Holder counts come from token accounts by mint; transfer activity is measured from a finalized 24-hour transaction window. The report keeps this separate from DEX volume and labels incomplete scans as lower bounds. These metrics can include pools, routers, bots, exchanges, airdrop recipients, and other non-user addresses, so they are activity proxies rather than proof of human adoption.
 
+The Solana snapshot also reports scanned supply coverage and largest/top-10 scanned-owner shares. These are concentration and scan-coverage diagnostics—not a claim that the owners are humans—and concentration is marked as a lower bound when the holder scan is incomplete.
+
 The `discover narratives` GitHub workflow runs manually and on weekdays at 12:00 UTC. It caches compact discovery history so recurring candidate signals can be reviewed for persistence. Set `TAVILY_API_KEY` for live web research; set `HELIUS_API_KEY` for Solana on-chain activity collection.
 
 To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_main WALLET_ADDRESS`. SOL-quoted PnL is reported in SOL unless a historical quote-price resolver is added; it is never converted using today’s price.
