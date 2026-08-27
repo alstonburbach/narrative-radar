@@ -188,6 +188,21 @@ def cluster_signal_terms(
     )[: max(1, int(limit))]
 
 
+def build_signal_follow_up_queries(label: str, chain: str = "unknown") -> dict[str, str]:
+    """Turn a candidate theme into transparent, human-review search prompts."""
+    anchor = str(label or "").strip()
+    chain_text = ""
+    if chain and chain.lower() not in {"unknown", "auto", "any"}:
+        chain_text = f" {chain.strip()}"
+    return {
+        "official_builders": f'"{anchor}"{chain_text} official docs github developers',
+        "adoption_usage": f'"{anchor}"{chain_text} users customers integrations usage',
+        "funding_backers": f'"{anchor}"{chain_text} funding investors grants backers',
+        "onchain_tokenomics": f'"{anchor}"{chain_text} on-chain holders volume unlocks',
+        "counterevidence": f'"{anchor}"{chain_text} scam exploit criticism insider unlocks',
+    }
+
+
 def discover_narratives(
     provider: Any,
     topic: Optional[str] = None,
@@ -255,7 +270,15 @@ def discover_narratives(
                 if _domain(item.source_url)
             }
         ),
-        "candidate_signals": cluster_signal_terms(evidence),
+        "candidate_signals": [
+            {
+                **signal,
+                "follow_up_queries": build_signal_follow_up_queries(
+                    signal["label"], normalized_chain
+                ),
+            }
+            for signal in cluster_signal_terms(evidence)
+        ],
         "evidence": [item.to_dict() for item in evidence],
         "quality": quality,
         "error": "; ".join(errors) if errors else None,

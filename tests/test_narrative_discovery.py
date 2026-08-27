@@ -1,5 +1,6 @@
 from app.agents.narrative_discovery import (
     build_discovery_queries,
+    build_signal_follow_up_queries,
     cluster_signal_terms,
     discover_narratives,
 )
@@ -16,6 +17,20 @@ def test_discovery_queries_keep_research_lenses_separate():
         "counterevidence",
     }
     assert all("stablecoin rails" in query for query in queries.values())
+    assert all("base" in query for query in queries.values())
+
+
+def test_signal_follow_up_queries_keep_the_theme_and_chain_in_each_lens():
+    queries = build_signal_follow_up_queries("stablecoin rails", chain="base")
+
+    assert set(queries) == {
+        "official_builders",
+        "adoption_usage",
+        "funding_backers",
+        "onchain_tokenomics",
+        "counterevidence",
+    }
+    assert all('"stablecoin rails"' in query for query in queries.values())
     assert all("base" in query for query in queries.values())
 
 

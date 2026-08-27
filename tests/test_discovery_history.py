@@ -38,3 +38,19 @@ def test_discovery_history_tracks_persisted_and_new_signals():
     assert result["persisted_signals"] == ["stablecoin rails"]
     assert result["new_signals"] == ["new users"]
     assert result["dropped_signals"] == ["payments"]
+    assert result["recurring_signals"] == ["stablecoin rails"]
+    assert result["recurring_signal_counts"]["stablecoin rails"] == 2
+
+
+def test_discovery_history_finds_middle_scan_recurring_signal():
+    result = compare_discovery_history(
+        [
+            {"started_at": "2026-08-27", "candidate_signal_labels": ["payments"]},
+            {"started_at": "2026-08-28", "candidate_signal_labels": ["stablecoin rails"]},
+            {"started_at": "2026-08-29", "candidate_signal_labels": ["stablecoin rails"]},
+            {"started_at": "2026-08-30", "candidate_signal_labels": ["new"]},
+        ]
+    )
+
+    assert result["persisted_signals"] == []
+    assert result["recurring_signals"] == ["stablecoin rails"]

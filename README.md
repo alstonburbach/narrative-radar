@@ -13,6 +13,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Persists compact evidence snapshots and reports whether a narrative is strengthening, weakening, or still too new to judge across repeated runs.
 - On Solana, optionally records holder counts, token-account scan coverage, token supply, and bounded finalized transfer activity as separate on-chain activity proxies.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
+- Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections without placing orders.
 - Includes a wallet accounting foundation that matches realized PnL to FIFO cost basis and keeps external deposits/withdrawals separate.

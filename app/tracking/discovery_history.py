@@ -1,3 +1,5 @@
+from collections import Counter
+from math import ceil
 from typing import Any, Iterable, Mapping, Optional
 
 
@@ -59,6 +61,17 @@ def compare_discovery_history(history: Iterable[Mapping[str, Any]]) -> dict:
     last = items[-1]
     first_labels = _labels(first)
     last_labels = _labels(last)
+    signal_run_counts = Counter(
+        label
+        for item in items
+        for label in _labels(item)
+    )
+    recurring_threshold = max(2, ceil(len(items) / 2))
+    recurring_signals = sorted(
+        label
+        for label, count in signal_run_counts.items()
+        if count >= recurring_threshold
+    )
     persisted = sorted(first_labels & last_labels)
     new_labels = sorted(last_labels - first_labels)
     dropped_labels = sorted(first_labels - last_labels)
@@ -89,6 +102,9 @@ def compare_discovery_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "lead_count": lead_count,
         "persisted_signal_count": len(persisted),
         "persisted_signals": persisted,
+        "recurring_signal_counts": dict(sorted(signal_run_counts.items())),
+        "recurring_signal_threshold": recurring_threshold,
+        "recurring_signals": recurring_signals,
         "new_signals": new_labels,
         "dropped_signals": dropped_labels,
         "note": (
