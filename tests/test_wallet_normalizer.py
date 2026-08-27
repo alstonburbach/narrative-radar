@@ -141,3 +141,20 @@ def test_missing_network_fee_is_reported_as_incomplete():
     activity = normalize_helius_transactions(WALLET, [transaction])
 
     assert activity.unpriced_swap_fees == 1
+
+
+def test_skipped_transaction_types_fail_closed_for_strategy_candidates():
+    activity = normalize_helius_transactions(
+        WALLET,
+        [
+            swap_transaction("buy", 1, "buy"),
+            {"signature": "unknown", "timestamp": 2, "type": "NFT_SALE"},
+        ],
+    )
+
+    assert activity.skipped_transactions == 1
+    assert activity.to_dict()["normalized_transaction_coverage_pct"] == 50.0
+    assert any("not recognized" in warning for warning in activity.warnings)
+    report = evaluate_normalized_activity(activity, min_closed_trades=0)
+    assert "skipped_transaction_types" in report["flags"]
+    assert report["research_candidate"] is False

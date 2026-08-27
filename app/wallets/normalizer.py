@@ -35,6 +35,16 @@ class NormalizedWalletActivity:
             "normalized_swaps": len(self.swaps),
             "normalized_transfers": len(self.transfers),
             "skipped_transactions": self.skipped_transactions,
+            "normalized_transaction_coverage_pct": (
+                round(
+                    (self.transaction_count - self.skipped_transactions)
+                    / self.transaction_count
+                    * 100,
+                    2,
+                )
+                if self.transaction_count
+                else 0.0
+            ),
             "unpriced_swaps": self.unpriced_swaps,
             "unpriced_swap_fees": self.unpriced_swap_fees,
             "unpriced_transfers": self.unpriced_transfers,
@@ -329,6 +339,10 @@ def normalize_helius_transactions(
         else:
             skipped_transactions += 1
 
+    if skipped_transactions:
+        warnings.append(
+            "Some transaction types were not recognized by the normalizer and were excluded."
+        )
     if unpriced_swaps:
         warnings.append("Some swaps lacked a complete SOL/token leg and were excluded.")
     if unpriced_swap_fees:

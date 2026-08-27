@@ -604,6 +604,8 @@ def evaluate_normalized_activity(activity, min_closed_trades: int = 20) -> dict:
         min_closed_trades=min_closed_trades,
     )
     ingestion_flags = []
+    if activity.skipped_transactions:
+        ingestion_flags.append("skipped_transaction_types")
     if activity.unpriced_swaps:
         ingestion_flags.append("unpriced_or_unrecognized_swaps")
     if activity.unpriced_swap_fees:
