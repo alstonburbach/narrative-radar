@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 
@@ -12,6 +12,10 @@ class Evidence:
     quote: Optional[str] = None
     relevance: Optional[str] = None
     confidence: float = 0.0
+    claim_type: str = "lead"
+    verification_status: str = "unverified_search_lead"
+    research_lens: Optional[str] = None
+    retrieved_at: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)

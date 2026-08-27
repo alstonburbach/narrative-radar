@@ -72,10 +72,31 @@ def _evidence_score(evidence: Iterable[Any]) -> int:
     return min(25, int(round(total)))
 
 
+def _narrative_quality_component(quality: Mapping[str, Any]) -> int:
+    value = _number(quality.get("quality_score"))
+    if value is None:
+        return 0
+    return int(round(max(0, min(100, value)) * 0.25))
+
+
+def _apply_narrative_gate(score: int, quality: Optional[Mapping[str, Any]]) -> int:
+    """Prevent strong market data from masking weak narrative evidence."""
+    if quality is None:
+        return score
+    classification = quality.get("classification")
+    caps = {
+        "insufficient_evidence": 29,
+        "promising_leads": 49,
+        "corroborated_leads": 69,
+    }
+    return min(score, caps.get(classification, 100))
+
+
 def score_radar(
     market: Mapping[str, Any],
     evidence: Iterable[Any] = (),
     red_flags: Optional[Iterable[Mapping[str, Any]]] = None,
+    narrative_quality: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     evidence_items = list(evidence)
     flags = list(red_flags) if red_flags is not None else run_red_team(market, evidence_items)
@@ -94,11 +115,16 @@ def score_radar(
     if market and market.get("price_usd"):
         structure += 3
 
+    evidence_component = (
+        _narrative_quality_component(narrative_quality)
+        if narrative_quality is not None
+        else _evidence_score(evidence_items)
+    )
     components = {
         "liquidity": _liquidity_score(liquidity),
         "market_activity": _activity_score(volume, liquidity),
         "momentum": _momentum_score(price_change),
-        "evidence": _evidence_score(evidence_items),
+        "evidence": evidence_component,
         "market_structure": structure,
     }
 
@@ -107,9 +133,13 @@ def score_radar(
         for flag in flags
     )
     penalty = min(45, penalty)
-    score = _clamp(sum(components.values()) - penalty)
+    raw_score = _clamp(sum(components.values()) - penalty)
+    score = _apply_narrative_gate(raw_score, narrative_quality)
 
-    if score >= 70:
+    if score >= 70 and (
+        narrative_quality is None
+        or narrative_quality.get("classification") == "verified_and_corroborated"
+    ):
         rating = "strong_watch"
     elif score >= 50:
         rating = "watch"
@@ -120,10 +150,13 @@ def score_radar(
 
     return {
         "radar_score": score,
+        "raw_market_score": raw_score,
+        "narrative_gate_applied": narrative_quality is not None,
         "rating": rating,
         "components": components,
         "risk_penalty": penalty,
         "red_team": summarize_red_team(flags),
+        "narrative_quality": narrative_quality or {},
         "classification_only": True,
         "note": "This score ranks research quality and market conditions; it does not predict returns or authorize a trade.",
     }
@@ -133,6 +166,7 @@ def calculate_narrative_score(
     market: Mapping[str, Any],
     evidence: Iterable[Any] = (),
     red_flags: Optional[Iterable[Mapping[str, Any]]] = None,
+    narrative_quality: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Compatibility alias for callers using the original planned name."""
-    return score_radar(market, evidence, red_flags)
+    return score_radar(market, evidence, red_flags, narrative_quality)

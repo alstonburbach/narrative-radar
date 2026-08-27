@@ -11,10 +11,8 @@ DATABASE_PATH = Path("data/narrative_radar.db")
 
 def get_connection():
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
-
     return connection
 
 
@@ -46,7 +44,6 @@ def initialize_database():
             )
             """
         )
-
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS evidence_items (
@@ -60,10 +57,28 @@ def initialize_database():
                 quote TEXT,
                 relevance TEXT,
                 confidence REAL NOT NULL,
-                discovered_at TEXT NOT NULL
+                discovered_at TEXT NOT NULL,
+                claim_type TEXT NOT NULL DEFAULT 'lead',
+                verification_status TEXT NOT NULL DEFAULT 'unverified_search_lead',
+                research_lens TEXT,
+                retrieved_at TEXT
             )
             """
         )
+        existing_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(evidence_items)")
+        }
+        migrations = {
+            "claim_type": "TEXT NOT NULL DEFAULT 'lead'",
+            "verification_status": "TEXT NOT NULL DEFAULT 'unverified_search_lead'",
+            "research_lens": "TEXT",
+            "retrieved_at": "TEXT",
+        }
+        for column, definition in migrations.items():
+            if column not in existing_columns:
+                conn.execute(
+                    f"ALTER TABLE evidence_items ADD COLUMN {column} {definition}"
+                )
 
 
 def save_market_snapshot(market: dict) -> int:
@@ -71,27 +86,12 @@ def save_market_snapshot(market: dict) -> int:
         cursor = conn.execute(
             """
             INSERT INTO market_snapshots (
-                contract_address,
-                chain,
-                token_name,
-                token_symbol,
-                price_usd,
-                market_cap,
-                fdv,
-                liquidity_usd,
-                volume_24h,
-                volume_6h,
-                volume_1h,
-                price_change_24h,
-                price_change_6h,
-                price_change_1h,
-                pair_address,
-                dex,
-                dex_url,
-                collected_at,
+                contract_address, chain, token_name, token_symbol,
+                price_usd, market_cap, fdv, liquidity_usd, volume_24h,
+                volume_6h, volume_1h, price_change_24h, price_change_6h,
+                price_change_1h, pair_address, dex, dex_url, collected_at,
                 raw_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 market.get("contract_address"),
@@ -115,29 +115,20 @@ def save_market_snapshot(market: dict) -> int:
                 json.dumps(market),
             ),
         )
-
         return cursor.lastrowid
 
 
 def save_evidence(contract_address: str, evidence: Evidence) -> int:
     discovered_at = datetime.now(timezone.utc).isoformat()
-
     with get_connection() as conn:
         cursor = conn.execute(
             """
             INSERT INTO evidence_items (
-                contract_address,
-                claim,
-                source_url,
-                source_type,
-                published_at,
-                author,
-                quote,
-                relevance,
-                confidence,
-                discovered_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                contract_address, claim, source_url, source_type,
+                published_at, author, quote, relevance, confidence,
+                discovered_at, claim_type, verification_status, research_lens,
+                retrieved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 contract_address,
@@ -150,7 +141,10 @@ def save_evidence(contract_address: str, evidence: Evidence) -> int:
                 evidence.relevance,
                 evidence.confidence,
                 discovered_at,
+                evidence.claim_type,
+                evidence.verification_status,
+                evidence.research_lens,
+                evidence.retrieved_at,
             ),
         )
-
         return cursor.lastrowid

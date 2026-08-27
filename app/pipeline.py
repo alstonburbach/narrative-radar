@@ -4,8 +4,9 @@ from typing import Any, Optional
 from app.agents.narrative_detective import (
     build_narrative_report,
     build_research_query,
-    results_to_evidence,
+    run_lens_research,
 )
+from app.agents.narrative_quality import assess_narrative_quality
 from app.agents.red_team import run_red_team, summarize_red_team
 from app.collectors.market import fetch_market_data
 from app.database.db import (
@@ -60,35 +61,42 @@ def run_analysis(
             token_symbol=market.get("token_symbol"),
         )
         research["query"] = query
-        try:
-            results = research_provider.search(
-                query,
-                limit=max(1, min(int(research_limit), 20)),
-            )
-            evidence = results_to_evidence(
-                results,
-                contract_address=contract_address,
-                token_name=market.get("token_name"),
-                token_symbol=market.get("token_symbol"),
-            )
-            research["status"] = "complete"
-            research["result_count"] = len(evidence)
-            if persist:
-                for item in evidence:
-                    save_evidence(contract_address, item)
-        except Exception as exc:
-            research["status"] = "failed"
-            research["error"] = str(exc)
+        evidence, lens_research = run_lens_research(
+            provider=research_provider,
+            contract_address=contract_address,
+            chain=market.get("chain") or requested_chain,
+            token_name=market.get("token_name"),
+            token_symbol=market.get("token_symbol"),
+            limit=research_limit,
+        )
+        research.update(lens_research)
+        if research["status"] == "complete":
+            research["error"] = None
+        else:
+            research["error"] = lens_research.get("error")
+        if persist:
+            for item in evidence:
+                save_evidence(contract_address, item)
     elif not market.get("found"):
         research["status"] = "skipped_no_market_pair"
 
+    narrative_quality = assess_narrative_quality(
+        evidence,
+        searched_lenses=research.get("searched_lenses", []),
+    )
     flags = run_red_team(market, evidence)
     report = build_narrative_report(
         token_name=market.get("token_name") or "Unknown",
         token_symbol=market.get("token_symbol") or "Unknown",
         evidence=evidence,
+        quality=narrative_quality,
     )
-    score = score_radar(market, evidence, flags)
+    score = score_radar(
+        market,
+        evidence,
+        flags,
+        narrative_quality=narrative_quality,
+    )
     paper = (
         project_paper_position(market, paper_usd)
         if paper_usd is not None
@@ -102,6 +110,7 @@ def run_analysis(
         "market": market,
         "research": research,
         "narrative": report,
+        "narrative_quality": narrative_quality,
         "red_team": {
             **summarize_red_team(flags),
             "flags": flags,

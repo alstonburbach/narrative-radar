@@ -49,6 +49,14 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         print(f"Liquidity: ${market.get('liquidity_usd'):,.2f}" if market.get("liquidity_usd") else "Liquidity: n/a")
         print(f"24h volume: ${market.get('volume_24h'):,.2f}" if market.get("volume_24h") else "24h volume: n/a")
     print(f"Radar score: {report['score']['radar_score']} ({report['score']['rating']})")
+    narrative_quality = report.get("narrative_quality", {})
+    print(
+        "Narrative evidence: "
+        f"{narrative_quality.get('quality_score', 0)}/100 "
+        f"({narrative_quality.get('classification', 'insufficient_evidence')})"
+    )
+    for warning in narrative_quality.get("warnings", []):
+        print(f"- [evidence] {warning}")
     print(f"Risk level: {report['red_team']['risk_level']}")
     for flag in report["red_team"]["flags"]:
         print(f"- [{flag['severity']}] {flag['message']}")

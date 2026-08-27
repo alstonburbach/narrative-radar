@@ -53,9 +53,13 @@ jobs:
               market = report.get("market", {})
               score = report.get("score", {})
               red_team = report.get("red_team", {})
+              narrative = report.get("narrative_quality", {})
               handle.write(f"## {market.get('token_name', 'Token')} ({market.get('token_symbol', 'unknown')})\\n")
               handle.write(f"- Status: `{report.get('status')}`\\n")
               handle.write(f"- Radar score: `{score.get('radar_score')}` ({score.get('rating')})\\n")
+              handle.write(f"- Narrative evidence: `{narrative.get('quality_score')}/100` ({narrative.get('classification')})\\n")
+              handle.write(f"- Independent domains: `{narrative.get('independent_domain_count')}`\\n")
+              handle.write(f"- Counterevidence leads: `{narrative.get('counterevidence_leads')}`\\n")
               handle.write(f"- Risk: `{red_team.get('risk_level')}`\\n")
               handle.write(f"- Research: `{report.get('research', {}).get('status')}`\\n")
           PY

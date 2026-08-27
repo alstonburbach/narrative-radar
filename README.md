@@ -8,6 +8,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Stores market snapshots and research evidence in SQLite.
 - Searches public web results through Tavily when `TAVILY_API_KEY` is configured.
 - Separates search leads from manually verified primary-source evidence.
+- Searches separate lenses for builders, adoption, funding, token structure, and counterevidence, then measures source independence and corroboration.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections without placing orders.
 - Includes a wallet accounting foundation that matches realized PnL to FIFO cost basis and keeps external deposits/withdrawals separate.
@@ -22,6 +23,8 @@ python -m app.main --contract TOKEN_CONTRACT --chain base --paper-usd 100
 ```
 
 Without a Tavily key, the market, red-team, score, and paper stages still run; web research is marked as unavailable.
+
+The narrative report is intentionally skeptical: search results are leads, not proof. A high-quality result needs multiple independent domains, more than social discussion, and manual verification of primary sources. The counterevidence lens is included so a project is not judged only from promotional claims.
 
 To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_main WALLET_ADDRESS`. SOL-quoted PnL is reported in SOL unless a historical quote-price resolver is added; it is never converted using today’s price.
 
