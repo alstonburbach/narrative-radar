@@ -2,6 +2,37 @@ from app.database import db
 from app.database.models import Evidence
 
 
+def test_market_snapshot_persists_pair_and_dex(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "narrative.db")
+    db.initialize_database()
+
+    snapshot_id = db.save_market_snapshot(
+        {
+            "contract_address": "0xtest",
+            "chain": "base",
+            "token_name": "Test",
+            "token_symbol": "TEST",
+            "price_usd": 0.01,
+            "market_cap": 100_000,
+            "fdv": 100_000,
+            "liquidity_usd": 25_000,
+            "volume_24h": 50_000,
+            "pair_address": "pair",
+            "dex": "uniswap",
+            "dex_url": "https://dex.example/pair",
+            "collected_at": "2026-08-27T00:00:00+00:00",
+        }
+    )
+
+    with db.get_connection() as connection:
+        row = connection.execute(
+            "SELECT pair_address, dex, dex_url FROM market_snapshots WHERE id = ?",
+            (snapshot_id,),
+        ).fetchone()
+
+    assert tuple(row) == ("pair", "uniswap", "https://dex.example/pair")
+
+
 def test_initialize_database_migrates_and_persists_evidence_metadata(monkeypatch, tmp_path):
     database_path = tmp_path / "narrative.db"
     monkeypatch.setattr(db, "DATABASE_PATH", database_path)
