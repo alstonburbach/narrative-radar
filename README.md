@@ -17,6 +17,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
 - Applies a transparent manual-review gate that reports whether score, evidence quality, freshness, red-team risk, source checks, and optional order-preview requirements pass.
+- Evaluates fixed-stake paper baskets, including target hit rates, break-even winner multiples, known-cost coverage, open versus realized results, and narrative-family concentration.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
@@ -29,6 +30,7 @@ cp .env.example .env
 python -m app.main --contract TOKEN_CONTRACT --chain base --paper-usd 100
 python -m app.discovery_main --topic "stablecoin rails" --json
 python -m app.main --contract SOLANA_MINT --chain solana --json
+python -m app.paper_basket_main --input paper-basket.json --stake-usd 50 --target-multiple 10 --json
 ```
 
 Without a Tavily key, the market, red-team, score, and paper stages still run; web research is marked as unavailable.
@@ -58,6 +60,8 @@ Wallet reports also show the realized-PnL observation window, profitable calenda
 Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, a five-minute market-snapshot freshness gate, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
 
 The JSON report also includes `decision_gate`. `manual_review_ready` means the research requirements passed for a human to inspect; `research_only` means one or more non-blocking requirements still need work; `blocked` means a hard safety requirement failed. If no order preview is requested, the gate evaluates research only. The gate always reports `execution_enabled: false` and never authorizes a transaction.
+
+To test the fixed-risk basket idea, provide a JSON list (or `{ "positions": [...] }`) where each position has `label`, `entry_market_cap`, and an explicit `outcome`: `closed` with `exit_market_cap`, `lost`, or `open` with `mark_market_cap`. Optional `fees_usd`, `slippage_usd`, and `narrative_family` fields are tracked transparently. Missing costs are flagged, and open positions remain marked rather than being counted as realized profit.
 
 ## Run from GitHub Actions
 
