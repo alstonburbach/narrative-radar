@@ -3,6 +3,12 @@ import json
 
 from app.agents.narrative_discovery import discover_narratives
 from app.collectors.web_research import TavilyResearchProvider
+from app.database.db import (
+    get_discovery_history,
+    initialize_database,
+    save_discovery_run,
+)
+from app.tracking.discovery_history import compare_discovery_history
 
 
 def build_parser():
@@ -16,6 +22,13 @@ def build_parser():
     )
     parser.add_argument("--chain", default="unknown")
     parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument(
+        "--history-limit",
+        type=int,
+        default=20,
+        help="Number of prior scans to use for durability comparison",
+    )
+    parser.add_argument("--no-persist", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
@@ -37,6 +50,21 @@ def main(argv=None) -> int:
         chain=args.chain,
         limit=args.limit,
     )
+    if not args.no_persist and report["status"] != "failed":
+        initialize_database()
+        report["discovery_run_id"] = save_discovery_run(report)
+        history = get_discovery_history(
+            topic=report["topic"],
+            chain=report["chain"],
+            limit=args.history_limit,
+        )
+        report["discovery_history"] = compare_discovery_history(history)
+    else:
+        report["discovery_run_id"] = None
+        report["discovery_history"] = {
+            "state": "not_persisted" if args.no_persist else "not_available",
+            "run_count": 0,
+        }
     if args.as_json:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["status"] != "failed" else 1
@@ -51,6 +79,12 @@ def main(argv=None) -> int:
         f"{quality['quality_score']}/100 ({quality['classification']})"
     )
     print(f"Independent domains: {report['independent_domain_count']}")
+    history = report.get("discovery_history", {})
+    print(
+        "Scan durability: "
+        f"{history.get('state', 'not_available')} "
+        f"({history.get('run_count', 0)} scans)"
+    )
     print("\nCandidate signals:")
     if report["candidate_signals"]:
         for signal in report["candidate_signals"]:

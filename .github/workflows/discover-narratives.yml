@@ -1,6 +1,8 @@
 name: discover narratives
 
 on:
+  schedule:
+    - cron: "0 12 * * 1-5"
   workflow_dispatch:
     inputs:
       topic:
@@ -23,9 +25,9 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     env:
-      TOPIC: ${{ inputs.topic }}
-      CHAIN: ${{ inputs.chain }}
-      LIMIT: ${{ inputs.limit }}
+      TOPIC: ${{ inputs.topic || 'crypto narratives' }}
+      CHAIN: ${{ inputs.chain || 'unknown' }}
+      LIMIT: ${{ inputs.limit || '5' }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
     steps:
       - name: Check out repository
@@ -34,6 +36,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Restore discovery history
+        uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-discovery-db-${{ github.run_id }}
+          restore-keys: narrative-radar-discovery-db-
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Discover narrative leads
@@ -56,6 +64,10 @@ jobs:
               handle.write("\\nCandidate signals:\\n")
               for signal in report.get("candidate_signals", [])[:10]:
                   handle.write(f"- `{signal.get('label')}` — domains={signal.get('independent_domains')}, lenses={signal.get('lenses')}\\n")
+              history = report.get("discovery_history", {})
+              handle.write(f"\\nScan durability: `{history.get('state')}` across `{history.get('run_count')}` scans\\n")
+              if history.get("persisted_signals"):
+                  handle.write(f"- Persisted signals: `{history.get('persisted_signals')}`\\n")
               handle.write("\\nResults are unverified leads; no trade signal or order is produced.\\n")
           PY
       - name: Upload discovery report

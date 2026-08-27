@@ -19,10 +19,20 @@ def create_research_job(contract_address: str, chain: str) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a paper-only Narrative Radar analysis.")
     parser.add_argument("contract", nargs="?", help="Token contract address")
+    parser.add_argument(
+        "--contract",
+        dest="contract_option",
+        help="Token contract address (named form for GitHub Actions)",
+    )
     parser.add_argument("--chain", default="unknown", help="Chain id, such as base or solana")
     parser.add_argument("--research-limit", type=int, default=5)
     parser.add_argument("--paper-usd", type=float, default=None)
     parser.add_argument("--no-research", action="store_true")
+    parser.add_argument(
+        "--no-onchain",
+        action="store_true",
+        help="Skip optional Solana holder and transfer-activity collection",
+    )
     parser.add_argument("--no-persist", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
@@ -67,6 +77,25 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         f"{history.get('state', 'not_persisted')} "
         f"({history.get('run_count', 0)} runs)"
     )
+    onchain = report.get("onchain_activity", {})
+    if onchain.get("status") not in {None, "not_requested", "unsupported_chain"}:
+        print(
+            "On-chain activity proxy: "
+            f"{onchain.get('holder_count', 'n/a')} holders / "
+            f"{onchain.get('transfer_transaction_count_24h', 'n/a')} transfer txns / "
+            f"{onchain.get('unique_active_wallets_24h', 'n/a')} active owners "
+            f"({onchain.get('status')})"
+        )
+        activity_history = onchain.get("history", {})
+        print(
+            "On-chain trend: "
+            f"{activity_history.get('state', 'not_collected')} "
+            f"({activity_history.get('run_count', 0)} snapshots)"
+        )
+        for warning in onchain.get("warnings", []):
+            print(f"- [on-chain] {warning}")
+    elif onchain.get("status") == "not_configured":
+        print(f"On-chain activity: not configured ({onchain.get('note')})")
     for warning in narrative_quality.get("warnings", []):
         print(f"- [evidence] {warning}")
     print(f"Risk level: {report['red_team']['risk_level']}")
@@ -84,7 +113,7 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    contract = args.contract or input("Token contract: ").strip()
+    contract = args.contract or args.contract_option or input("Token contract: ").strip()
     if not contract:
         print("A token contract is required.")
         return 2
@@ -102,6 +131,7 @@ def main(argv=None) -> int:
         research_limit=args.research_limit,
         paper_usd=args.paper_usd,
         persist=not args.no_persist,
+        collect_onchain=not args.no_onchain,
     )
     if provider_error:
         report["research"]["error"] = provider_error

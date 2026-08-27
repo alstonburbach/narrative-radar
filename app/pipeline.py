@@ -10,15 +10,19 @@ from app.agents.narrative_quality import assess_narrative_quality
 from app.agents.red_team import run_red_team, summarize_red_team
 from app.collectors.market import fetch_market_data
 from app.collectors.source_verifier import verify_source_leads
+from app.collectors.adoption_provider import is_solana_chain
 from app.database.db import (
+    get_onchain_activity_history,
     get_narrative_history,
     initialize_database,
+    save_onchain_activity_snapshot,
     save_evidence,
     save_market_snapshot,
     save_narrative_run,
 )
 from app.scoring.narrative_score import score_radar
 from app.tracking.narrative_history import compare_narrative_history
+from app.tracking.adoption_history import compare_adoption_history
 from app.tracking.paper_tracker import project_paper_position
 
 
@@ -29,6 +33,11 @@ def run_analysis(
     research_limit: int = 5,
     paper_usd: Optional[float] = None,
     persist: bool = True,
+    adoption_provider: Optional[Any] = None,
+    adoption_holder_limit: int = 2_000,
+    adoption_transfer_limit: int = 100,
+    adoption_window_hours: int = 24,
+    collect_onchain: bool = True,
 ) -> dict:
     if not contract_address or not contract_address.strip():
         raise ValueError("contract_address is required")
@@ -94,6 +103,88 @@ def run_analysis(
     elif not market.get("found"):
         research["status"] = "skipped_no_market_pair"
 
+    onchain_activity = {
+        "status": "not_requested" if not collect_onchain else "pending",
+        "snapshot_id": None,
+        "history": {
+            "state": "not_requested" if not collect_onchain else "not_collected",
+            "run_count": 0,
+        },
+        "note": (
+            "On-chain activity metrics are optional and are kept separate from market volume."
+        ),
+    }
+    if collect_onchain:
+        if not market.get("found"):
+            onchain_activity.update(
+                {
+                    "status": "skipped_no_market_pair",
+                    "note": "No market pair was found, so on-chain activity collection was skipped.",
+                }
+            )
+        elif not is_solana_chain(market.get("chain")):
+            onchain_activity.update(
+                {
+                    "status": "unsupported_chain",
+                    "chain": market.get("chain"),
+                    "note": "The current on-chain activity adapter supports Solana mainnet only.",
+                }
+            )
+        else:
+            provider = adoption_provider
+            provider_error = None
+            if provider is None:
+                try:
+                    from app.collectors.adoption_provider import HeliusAdoptionProvider
+
+                    provider = HeliusAdoptionProvider()
+                except RuntimeError as exc:
+                    provider_error = str(exc)
+            if provider is None:
+                onchain_activity.update(
+                    {
+                        "status": "not_configured",
+                        "provider": "helius",
+                        "error": provider_error,
+                        "note": "Set HELIUS_API_KEY to collect Solana holder and transfer activity.",
+                    }
+                )
+            else:
+                try:
+                    snapshot = provider.fetch_snapshot(
+                        token_address=contract_address,
+                        chain=market.get("chain") or requested_chain,
+                        holder_limit=adoption_holder_limit,
+                        transfer_limit=adoption_transfer_limit,
+                        activity_window_hours=adoption_window_hours,
+                    )
+                    if hasattr(snapshot, "to_dict"):
+                        snapshot = snapshot.to_dict()
+                    if not isinstance(snapshot, dict):
+                        raise RuntimeError("on-chain provider returned an invalid snapshot")
+                    onchain_activity.update(snapshot)
+                    if persist and snapshot.get("status") in {"complete", "partial"}:
+                        onchain_activity["snapshot_id"] = save_onchain_activity_snapshot(snapshot)
+                        history = get_onchain_activity_history(
+                            contract_address,
+                            chain=market.get("chain") or requested_chain,
+                        )
+                        onchain_activity["history"] = compare_adoption_history(history)
+                    elif not persist:
+                        onchain_activity["history"] = {
+                            "state": "not_persisted",
+                            "run_count": 0,
+                            "note": "Enable persistence to compare on-chain activity across runs.",
+                        }
+                except Exception as exc:
+                    onchain_activity.update(
+                        {
+                            "status": "failed",
+                            "error": str(exc),
+                            "note": "The on-chain collector failed closed; no activity signal was inferred.",
+                        }
+                    )
+
     narrative_quality = assess_narrative_quality(
         evidence,
         searched_lenses=research.get("searched_lenses", []),
@@ -131,6 +222,7 @@ def run_analysis(
         },
         "score": score,
         "paper": paper,
+        "onchain_activity": onchain_activity,
         "disclaimer": "Research and paper-analysis output only. No orders are placed and no return is guaranteed.",
     }
     if persist and market.get("found"):

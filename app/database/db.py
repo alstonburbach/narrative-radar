@@ -85,6 +85,58 @@ def initialize_database():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS onchain_activity_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_address TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                source TEXT NOT NULL,
+                holder_count INTEGER,
+                holder_count_is_lower_bound INTEGER NOT NULL DEFAULT 0,
+                token_account_count INTEGER,
+                holder_scan_total INTEGER,
+                holder_scan_returned INTEGER NOT NULL DEFAULT 0,
+                holder_scan_complete INTEGER,
+                last_indexed_slot INTEGER,
+                token_supply REAL,
+                token_supply_raw TEXT,
+                token_decimals INTEGER,
+                activity_window_hours INTEGER,
+                transfer_transaction_count_24h INTEGER,
+                transfer_event_count_24h INTEGER,
+                unique_active_wallets_24h INTEGER,
+                unique_inflow_wallets_24h INTEGER,
+                unique_outflow_wallets_24h INTEGER,
+                transfer_scan_returned INTEGER NOT NULL DEFAULT 0,
+                transfer_scan_limit INTEGER,
+                transfer_scan_truncated INTEGER NOT NULL DEFAULT 0,
+                raw_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS discovery_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                quality_score REAL,
+                classification TEXT,
+                independent_domain_count INTEGER NOT NULL DEFAULT 0,
+                lead_count INTEGER NOT NULL DEFAULT 0,
+                candidate_signal_count INTEGER NOT NULL DEFAULT 0,
+                searched_lens_count INTEGER NOT NULL DEFAULT 0,
+                failed_lens_count INTEGER NOT NULL DEFAULT 0,
+                candidate_signal_labels TEXT NOT NULL,
+                raw_json TEXT NOT NULL
+            )
+            """
+        )
         existing_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(evidence_items)")
         }
@@ -251,3 +303,195 @@ def get_narrative_history(contract_address: str, limit: int = 20) -> list[dict]:
             (contract_address, limit),
         ).fetchall()
     return [dict(row) for row in reversed(rows)]
+
+
+def save_onchain_activity_snapshot(snapshot: dict) -> int:
+    """Persist descriptive on-chain metrics without turning them into a score."""
+    metrics = {
+        "token_address": snapshot.get("token_address") or snapshot.get("contract_address"),
+        "chain": (snapshot.get("chain") or "unknown").strip().lower(),
+        "observed_at": snapshot.get("observed_at") or datetime.now(timezone.utc).isoformat(),
+        "status": snapshot.get("status") or "unknown",
+        "source": snapshot.get("source") or "unknown",
+        "holder_count": snapshot.get("holder_count"),
+        "holder_count_is_lower_bound": bool(snapshot.get("holder_count_is_lower_bound")),
+        "token_account_count": snapshot.get("token_account_count"),
+        "holder_scan_total": snapshot.get("holder_scan_total"),
+        "holder_scan_returned": snapshot.get("holder_scan_returned") or 0,
+        "holder_scan_complete": snapshot.get("holder_scan_complete"),
+        "last_indexed_slot": snapshot.get("last_indexed_slot"),
+        "token_supply": snapshot.get("token_supply"),
+        "token_supply_raw": snapshot.get("token_supply_raw"),
+        "token_decimals": snapshot.get("token_decimals"),
+        "activity_window_hours": snapshot.get("activity_window_hours"),
+        "transfer_transaction_count_24h": snapshot.get("transfer_transaction_count_24h"),
+        "transfer_event_count_24h": snapshot.get("transfer_event_count_24h"),
+        "unique_active_wallets_24h": snapshot.get("unique_active_wallets_24h"),
+        "unique_inflow_wallets_24h": snapshot.get("unique_inflow_wallets_24h"),
+        "unique_outflow_wallets_24h": snapshot.get("unique_outflow_wallets_24h"),
+        "transfer_scan_returned": snapshot.get("transfer_scan_returned") or 0,
+        "transfer_scan_limit": snapshot.get("transfer_scan_limit"),
+        "transfer_scan_truncated": bool(snapshot.get("transfer_scan_truncated")),
+    }
+    if not metrics["token_address"]:
+        raise ValueError("token_address is required")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO onchain_activity_snapshots (
+                token_address, chain, observed_at, status, source,
+                holder_count, holder_count_is_lower_bound, token_account_count,
+                holder_scan_total, holder_scan_returned, holder_scan_complete,
+                last_indexed_slot, token_supply, token_supply_raw, token_decimals,
+                activity_window_hours, transfer_transaction_count_24h,
+                transfer_event_count_24h, unique_active_wallets_24h,
+                unique_inflow_wallets_24h, unique_outflow_wallets_24h,
+                transfer_scan_returned, transfer_scan_limit,
+                transfer_scan_truncated, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                metrics["token_address"],
+                metrics["chain"],
+                metrics["observed_at"],
+                metrics["status"],
+                metrics["source"],
+                metrics["holder_count"],
+                int(metrics["holder_count_is_lower_bound"]),
+                metrics["token_account_count"],
+                metrics["holder_scan_total"],
+                metrics["holder_scan_returned"],
+                None
+                if metrics["holder_scan_complete"] is None
+                else int(bool(metrics["holder_scan_complete"])),
+                metrics["last_indexed_slot"],
+                metrics["token_supply"],
+                metrics["token_supply_raw"],
+                metrics["token_decimals"],
+                metrics["activity_window_hours"],
+                metrics["transfer_transaction_count_24h"],
+                metrics["transfer_event_count_24h"],
+                metrics["unique_active_wallets_24h"],
+                metrics["unique_inflow_wallets_24h"],
+                metrics["unique_outflow_wallets_24h"],
+                metrics["transfer_scan_returned"],
+                metrics["transfer_scan_limit"],
+                int(metrics["transfer_scan_truncated"]),
+                json.dumps(metrics),
+            ),
+        )
+        return cursor.lastrowid
+
+
+def get_onchain_activity_history(
+    token_address: str,
+    chain: str = "unknown",
+    limit: int = 20,
+) -> list[dict]:
+    limit = max(1, min(int(limit), 200))
+    chain = (chain or "unknown").strip().lower()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, token_address, chain, observed_at, status, source,
+                   holder_count, holder_count_is_lower_bound, token_account_count,
+                   holder_scan_total, holder_scan_returned, holder_scan_complete,
+                   last_indexed_slot, token_supply, token_supply_raw, token_decimals,
+                   activity_window_hours, transfer_transaction_count_24h,
+                   transfer_event_count_24h, unique_active_wallets_24h,
+                   unique_inflow_wallets_24h, unique_outflow_wallets_24h,
+                   transfer_scan_returned, transfer_scan_limit,
+                   transfer_scan_truncated
+            FROM onchain_activity_snapshots
+            WHERE token_address = ? AND chain = ?
+            ORDER BY observed_at DESC
+            LIMIT ?
+            """,
+            (token_address, chain, limit),
+        ).fetchall()
+    return [dict(row) for row in reversed(rows)]
+
+
+def save_discovery_run(report: dict) -> int:
+    """Persist compact discovery metrics so repeated scans can be compared."""
+    quality = report.get("quality") or {}
+    lenses = report.get("lenses") or {}
+    signals = report.get("candidate_signals") or []
+    labels = [signal.get("label") for signal in signals if signal.get("label")]
+    metrics = {
+        "topic": report.get("topic") or "crypto narratives",
+        "chain": (report.get("chain") or "unknown").strip().lower(),
+        "started_at": report.get("started_at") or datetime.now(timezone.utc).isoformat(),
+        "status": report.get("status") or "unknown",
+        "quality_score": quality.get("quality_score"),
+        "classification": quality.get("classification"),
+        "independent_domain_count": report.get("independent_domain_count") or 0,
+        "lead_count": report.get("lead_count") or 0,
+        "candidate_signal_count": len(labels),
+        "searched_lens_count": len(report.get("searched_lenses") or []),
+        "failed_lens_count": sum(
+            1 for item in lenses.values() if item.get("status") == "failed"
+        ),
+        "candidate_signal_labels": labels,
+    }
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO discovery_runs (
+                topic, chain, started_at, status, quality_score, classification,
+                independent_domain_count, lead_count, candidate_signal_count,
+                searched_lens_count, failed_lens_count, candidate_signal_labels,
+                raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                metrics["topic"],
+                metrics["chain"],
+                metrics["started_at"],
+                metrics["status"],
+                metrics["quality_score"],
+                metrics["classification"],
+                metrics["independent_domain_count"],
+                metrics["lead_count"],
+                metrics["candidate_signal_count"],
+                metrics["searched_lens_count"],
+                metrics["failed_lens_count"],
+                json.dumps(metrics["candidate_signal_labels"]),
+                json.dumps(metrics),
+            ),
+        )
+        return cursor.lastrowid
+
+
+def get_discovery_history(
+    topic: str,
+    chain: str = "unknown",
+    limit: int = 20,
+) -> list[dict]:
+    limit = max(1, min(int(limit), 200))
+    chain = (chain or "unknown").strip().lower()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, topic, chain, started_at, status, quality_score,
+                   classification, independent_domain_count, lead_count,
+                   candidate_signal_count, searched_lens_count,
+                   failed_lens_count, candidate_signal_labels
+            FROM discovery_runs
+            WHERE topic = ? AND chain = ?
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            (topic, chain, limit),
+        ).fetchall()
+    history = []
+    for row in reversed(rows):
+        item = dict(row)
+        try:
+            item["candidate_signal_labels"] = json.loads(
+                item.get("candidate_signal_labels") or "[]"
+            )
+        except (TypeError, json.JSONDecodeError):
+            item["candidate_signal_labels"] = []
+        history.append(item)
+    return history
