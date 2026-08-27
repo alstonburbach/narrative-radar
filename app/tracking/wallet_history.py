@@ -56,6 +56,18 @@ def _positive_realized_candidate(item: Mapping[str, Any]) -> bool:
     return bool(item.get("research_candidate")) and pnl is not None and pnl > 0
 
 
+def _accounting_fingerprint(item: Mapping[str, Any]) -> tuple:
+    """Return fields that change when the observed trading history changes."""
+    return (
+        item.get("primary_realized_pnl"),
+        item.get("closed_trades"),
+        item.get("wins"),
+        item.get("losses"),
+        item.get("external_inflow_usd"),
+        item.get("external_outflow_usd"),
+    )
+
+
 def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
     """Measure repeated realized-PnL evidence without authorizing copy trades."""
     items = list(history)
@@ -82,6 +94,10 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
     last = items[-1]
     candidate_runs = sum(_positive_realized_candidate(item) for item in items)
     contaminated_runs = sum(bool(_flags(item) & CONTAMINATION_FLAGS) for item in items)
+    distinct_accounting_snapshots = len(
+        {_accounting_fingerprint(item) for item in items}
+    )
+    history_progressed = distinct_accounting_snapshots > 1
     same_quote_asset = (
         first.get("primary_quote_asset")
         and first.get("primary_quote_asset") == last.get("primary_quote_asset")
@@ -95,8 +111,15 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
     closed_trades = _delta(first, last, "closed_trades")
     external_inflow = _delta(first, last, "external_inflow_usd")
 
-    if len(items) >= 3 and candidate_runs >= 3 and contaminated_runs == 0:
+    if (
+        len(items) >= 3
+        and candidate_runs >= 3
+        and contaminated_runs == 0
+        and history_progressed
+    ):
         classification = "repeatable_realized_candidate"
+    elif len(items) >= 3 and candidate_runs >= 3 and not history_progressed:
+        classification = "same_snapshot_repeated"
     elif contaminated_runs:
         classification = "contaminated_or_incomplete"
     elif candidate_runs >= 2:
@@ -121,6 +144,8 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "last_run_at": last.get("analyzed_at"),
         "positive_realized_candidate_runs": candidate_runs,
         "contaminated_or_incomplete_runs": contaminated_runs,
+        "distinct_accounting_snapshots": distinct_accounting_snapshots,
+        "history_progressed": history_progressed,
         "same_primary_quote_asset": bool(same_quote_asset),
         "primary_realized_pnl": pnl,
         "quality_score": quality,

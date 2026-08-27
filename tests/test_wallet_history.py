@@ -34,6 +34,21 @@ def test_wallet_history_identifies_three_clean_positive_runs_as_candidate():
     assert result["strategy_classification"] == "repeatable_realized_candidate"
     assert result["positive_realized_candidate_runs"] == 3
     assert result["primary_realized_pnl"]["delta"] == 40
+    assert result["history_progressed"] is True
+
+
+def test_wallet_history_does_not_call_identical_rechecks_a_strategy():
+    result = compare_wallet_history(
+        [
+            _run("2026-08-27", 100),
+            _run("2026-08-28", 100),
+            _run("2026-08-29", 100),
+        ]
+    )
+
+    assert result["strategy_classification"] == "same_snapshot_repeated"
+    assert result["state"] == "mixed_or_stable"
+    assert result["history_progressed"] is False
 
 
 def test_wallet_history_downgrades_deposit_or_cost_basis_contamination():
