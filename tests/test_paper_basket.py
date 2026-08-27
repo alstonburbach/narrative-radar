@@ -65,6 +65,10 @@ def test_fixed_fifty_dollar_basket_reports_asymmetric_outcome():
     assert report["target_metrics"]["realized_target_hit_rate_pct"] == 20.0
     assert report["break_even_winner_multiple_before_costs"] == 5.0
     assert report["execution_enabled"] is False
+    distribution = report["outcome_distribution"]
+    assert distribution["realized_winner_count"] == 1
+    assert distribution["largest_winner_share_of_gross_winning_pnl_pct"] == 100.0
+    assert any("winner supplies more than 75%" in warning for warning in report["warnings"])
 
 
 def test_basket_does_not_hide_missing_costs_or_correlation():

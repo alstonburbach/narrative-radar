@@ -226,6 +226,44 @@ def evaluate_paper_basket(
             }
         )
 
+
+    realized_records_for_distribution = [
+        record
+        for record in records
+        if record.get("outcome") in {"closed", "lost"}
+    ]
+    winning_pnls = [
+        record["gross_pnl_usd"]
+        for record in realized_records_for_distribution
+        if record.get("gross_pnl_usd", 0) > 0
+    ]
+    losing_count = sum(
+        record.get("gross_pnl_usd", 0) < 0
+        for record in realized_records_for_distribution
+    )
+    flat_count = sum(
+        record.get("gross_pnl_usd", 0) == 0
+        for record in realized_records_for_distribution
+    )
+    winning_pnl_total = sum(winning_pnls)
+    largest_winner_pnl = max(winning_pnls, default=0.0)
+    outcome_distribution = {
+        "realized_winner_count": len(winning_pnls) if all_valid else None,
+        "realized_loser_count": losing_count if all_valid else None,
+        "realized_flat_count": flat_count if all_valid else None,
+        "gross_winning_pnl_usd": (
+            _round(winning_pnl_total) if all_valid else None
+        ),
+        "largest_winner_gross_pnl_usd": (
+            _round(largest_winner_pnl) if all_valid and winning_pnls else None
+        ),
+        "largest_winner_share_of_gross_winning_pnl_pct": (
+            _round(largest_winner_pnl / winning_pnl_total * 100)
+            if all_valid and winning_pnl_total > 0
+            else None
+        ),
+    }
+
     realized_target_hits = sum(
         record.get("target_reached") is True
         and record.get("outcome") == "closed"
@@ -276,6 +314,15 @@ def evaluate_paper_basket(
             "Every position is in one narrative family; this is not diversified "
             "by narrative."
         )
+    largest_winner_share = outcome_distribution[
+        "largest_winner_share_of_gross_winning_pnl_pct"
+    ]
+    if largest_winner_share is not None and largest_winner_share > 75:
+        warnings.append(
+            "The largest realized winner supplies more than 75% of gross winning "
+            "PnL; treat the basket result as winner-concentrated, not yet repeatable."
+        )
+
     if errors:
         warnings.append(
             "Basket results are incomplete until every position has valid required "
@@ -322,6 +369,7 @@ def evaluate_paper_basket(
         "narrative_family_counts": dict(sorted(family_counts.items())),
         "max_narrative_family_share_pct": family_share_pct,
         "target_metrics": target_metrics,
+        "outcome_distribution": outcome_distribution,
         "aggregate": aggregate,
         "missing_cost_positions": missing_cost_positions,
         "errors": errors,
