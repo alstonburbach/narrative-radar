@@ -32,6 +32,7 @@ class WalletTransfer:
     asset: str
     amount_usd: float
     external: bool = True
+    counterparty: Optional[str] = None
 
     def __post_init__(self):
         if self.direction not in {"in", "out"}:

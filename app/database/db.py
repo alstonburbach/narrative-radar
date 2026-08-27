@@ -584,6 +584,8 @@ def save_wallet_run(report: dict) -> int:
         "unmatched_sell_value_usd": pnl.get("unmatched_sell_value_usd"),
         "profit_factor": pnl.get("profit_factor"),
         "win_rate_pct": pnl.get("win_rate_pct"),
+        "strategy_profile": pnl.get("strategy_profile") or {},
+        "external_flow_profile": flow,
         "quote_assets": pnl.get("quote_assets") or [],
         "flags": flags,
     }
@@ -635,7 +637,7 @@ def get_wallet_history(wallet_address: str, limit: int = 20) -> list[dict]:
                    losses, primary_realized_pnl, primary_quote_asset,
                    realized_pnl_usd, external_inflow_usd, external_outflow_usd,
                    unmatched_sell_value_usd, profit_factor, win_rate_pct,
-                   quote_assets, flags
+                   quote_assets, flags, raw_json
             FROM wallet_runs
             WHERE wallet_address = ?
             ORDER BY analyzed_at DESC
@@ -651,5 +653,12 @@ def get_wallet_history(wallet_address: str, limit: int = 20) -> list[dict]:
                 item[key] = json.loads(item.get(key) or "[]")
             except (TypeError, json.JSONDecodeError):
                 item[key] = []
+        try:
+            raw_metrics = json.loads(item.get("raw_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            raw_metrics = {}
+        item["strategy_profile"] = raw_metrics.get("strategy_profile") or {}
+        item["external_flow_profile"] = raw_metrics.get("external_flow_profile") or {}
+        item.pop("raw_json", None)
         history.append(item)
     return history

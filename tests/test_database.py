@@ -197,11 +197,18 @@ def test_wallet_history_persists_realized_pnl_and_contamination_flags(monkeypatc
             "unmatched_sell_value_usd": 3,
             "profit_factor": 1.5,
             "win_rate_pct": 61.9,
+            "strategy_profile": {
+                "observed_span_days": 45.0,
+                "profitable_months": 2,
+                "style": "short_swing",
+            },
             "quote_assets": ["USD"],
         },
         "external_flow": {
             "external_inflow_usd": 100,
             "external_outflow_usd": 25,
+            "external_inflow_counterparty_count": 1,
+            "largest_inflow_source_share_pct": 100.0,
         },
     }
 
@@ -213,3 +220,5 @@ def test_wallet_history_persists_realized_pnl_and_contamination_flags(monkeypatc
     assert history[0]["primary_quote_asset"] == "USD"
     assert history[0]["external_inflow_usd"] == 100
     assert history[0]["flags"] == ["incomplete_cost_basis_or_inbound_tokens"]
+    assert history[0]["strategy_profile"]["profitable_months"] == 2
+    assert history[0]["external_flow_profile"]["external_inflow_counterparty_count"] == 1

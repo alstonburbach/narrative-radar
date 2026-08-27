@@ -52,3 +52,26 @@ def test_normalizer_preserves_real_sol_pnl_without_fake_usd_conversion():
     assert report["pnl"]["primary_realized_pnl"] > 0
     assert report["pnl"]["realized_pnl_usd"] is None
     assert report["research_candidate"] is True
+
+
+def test_normalizer_preserves_external_transfer_counterparty():
+    transaction = {
+        "signature": "transfer",
+        "timestamp": 1,
+        "type": "TRANSFER",
+        "nativeTransfers": [
+            {
+                "amount": 1_000_000_000,
+                "fromUserAccount": "Source111",
+                "toUserAccount": WALLET,
+            }
+        ],
+    }
+
+    activity = normalize_helius_transactions(
+        WALLET,
+        [transaction],
+        quote_price_resolver=lambda asset, timestamp: 100.0,
+    )
+
+    assert activity.transfers[0].counterparty == "Source111"

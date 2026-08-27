@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from statistics import median
 from typing import Iterable, List
 
@@ -6,6 +7,123 @@ from app.wallets.ledger import WalletSwap, WalletTransfer
 
 
 USD_LIKE_ASSETS = {"USD", "USDC", "USDT", "DAI", "FDUSD"}
+
+
+def _timestamp_datetime(value):
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _month_key(value):
+    parsed = _timestamp_datetime(value)
+    return parsed.strftime("%Y-%m") if parsed else None
+
+
+def _build_strategy_profile(
+    records: list[dict],
+    realized_pnl: float,
+    matched_cost_basis: float,
+) -> dict:
+    """Summarize whether realized performance is distributed over time.
+
+    This is deliberately not a portfolio-return calculation: open positions,
+    mark-to-market gains, and unpriced assets are outside the profile.
+    """
+    if not records:
+        return {
+            "trade_count": 0,
+            "active_days": 0,
+            "observed_span_days": None,
+            "observed_months": 0,
+            "profitable_months": 0,
+            "profitable_month_share_pct": None,
+            "largest_profitable_month_share_pct": None,
+            "realized_roi_on_matched_cost_basis_pct": None,
+            "median_holding_days": None,
+            "average_holding_days": None,
+            "trades_per_30d": None,
+            "timestamp_coverage_pct": 0.0,
+            "monthly_realized_pnl": {},
+            "style": "unknown",
+        }
+
+    month_pnl = defaultdict(float)
+    active_days = set()
+    dated = []
+    holding_days = []
+    for record in records:
+        parsed = _timestamp_datetime(record.get("timestamp"))
+        if parsed:
+            dated.append(parsed)
+            active_days.add(parsed.date().isoformat())
+            month_pnl[parsed.strftime("%Y-%m")] += record["pnl"]
+        if record.get("holding_days") is not None:
+            holding_days.append(record["holding_days"])
+
+    observed_months = len(month_pnl)
+    profitable_months = sum(value > 0 for value in month_pnl.values())
+    positive_month_pnl = [value for value in month_pnl.values() if value > 0]
+    gross_monthly_profit = sum(positive_month_pnl)
+    largest_profitable_month_share_pct = (
+        round(max(positive_month_pnl) / gross_monthly_profit * 100, 2)
+        if gross_monthly_profit
+        else None
+    )
+    observed_span_days = None
+    if len(dated) >= 2:
+        observed_span_days = round(
+            (max(dated) - min(dated)).total_seconds() / 86_400,
+            2,
+        )
+    elapsed_days = max(observed_span_days or 0.0, 1.0)
+    median_holding_days = round(median(holding_days), 2) if holding_days else None
+    if median_holding_days is None:
+        style = "unknown"
+    elif median_holding_days <= 1:
+        style = "intraday_or_scalping"
+    elif median_holding_days <= 7:
+        style = "short_swing"
+    else:
+        style = "swing_or_longer"
+
+    return {
+        "trade_count": len(records),
+        "active_days": len(active_days),
+        "observed_span_days": observed_span_days,
+        "observed_months": observed_months,
+        "profitable_months": profitable_months,
+        "profitable_month_share_pct": (
+            round(profitable_months / observed_months * 100, 2)
+            if observed_months
+            else None
+        ),
+        "largest_profitable_month_share_pct": largest_profitable_month_share_pct,
+        "realized_roi_on_matched_cost_basis_pct": (
+            round(realized_pnl / matched_cost_basis * 100, 2)
+            if matched_cost_basis > 0
+            else None
+        ),
+        "median_holding_days": median_holding_days,
+        "average_holding_days": (
+            round(sum(holding_days) / len(holding_days), 2)
+            if holding_days
+            else None
+        ),
+        "trades_per_30d": round(len(records) / elapsed_days * 30, 2),
+        "timestamp_coverage_pct": round(len(dated) / len(records) * 100, 2),
+        "monthly_realized_pnl": {
+            month: round(value, 8)
+            for month, value in sorted(month_pnl.items())
+        },
+        "style": style,
+    }
 
 
 def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
@@ -27,12 +145,13 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
     gross_profit = 0.0
     gross_loss = 0.0
     trade_pnls_by_asset = defaultdict(list)
+    trade_records_by_asset = defaultdict(list)
 
     for swap in sorted(swaps, key=lambda item: item.timestamp):
         if swap.side == "buy":
             unit_cost = (swap.quote_usd + swap.fee_usd) / swap.token_amount
             lots[(swap.token_address, swap.quote_asset.upper())].append(
-                [swap.token_amount, unit_cost]
+                [swap.token_amount, unit_cost, swap.timestamp]
             )
             continue
 
@@ -40,9 +159,13 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
         unit_proceeds = max(0.0, swap.quote_usd - swap.fee_usd) / swap.token_amount
         sell_pnl = 0.0
         sell_matched = 0.0
+        sell_cost_basis = 0.0
+        sell_proceeds = 0.0
+        holding_days_total = 0.0
+        holding_amount = 0.0
         asset = swap.quote_asset.upper()
         while remaining > 1e-12 and lots[(swap.token_address, asset)]:
-            lot_amount, unit_cost = lots[(swap.token_address, asset)][0]
+            lot_amount, unit_cost, lot_timestamp = lots[(swap.token_address, asset)][0]
             matched_amount = min(remaining, lot_amount)
             cost = matched_amount * unit_cost
             proceeds = matched_amount * unit_proceeds
@@ -50,6 +173,15 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
             matched_proceeds_by_asset[asset] += proceeds
             sell_pnl += proceeds - cost
             sell_matched += matched_amount
+            sell_cost_basis += cost
+            sell_proceeds += proceeds
+            buy_time = _timestamp_datetime(lot_timestamp)
+            sell_time = _timestamp_datetime(swap.timestamp)
+            if buy_time and sell_time:
+                holding_days_total += matched_amount * max(
+                    0.0, (sell_time - buy_time).total_seconds() / 86_400
+                )
+                holding_amount += matched_amount
             remaining -= matched_amount
             lot_amount -= matched_amount
             if lot_amount <= 1e-12:
@@ -69,6 +201,20 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
                 gross_loss += abs(sell_pnl)
             realized_by_asset[asset] += sell_pnl
             trade_pnls_by_asset[asset].append(sell_pnl)
+            trade_records_by_asset[asset].append(
+                {
+                    "timestamp": swap.timestamp,
+                    "token_address": swap.token_address,
+                    "pnl": sell_pnl,
+                    "cost_basis": sell_cost_basis,
+                    "proceeds": sell_proceeds,
+                    "holding_days": (
+                        holding_days_total / holding_amount
+                        if holding_amount > 1e-12
+                        else None
+                    ),
+                }
+            )
 
     quote_assets = sorted(
         set(realized_by_asset)
@@ -140,6 +286,19 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
         if primary_quote_asset
         else None
     )
+    strategy_profile_by_asset = {
+        asset: _build_strategy_profile(
+            trade_records_by_asset[asset],
+            realized_by_asset[asset],
+            matched_cost_basis_by_asset[asset],
+        )
+        for asset in trade_records_by_asset
+    }
+    primary_strategy_profile = (
+        strategy_profile_by_asset.get(primary_quote_asset)
+        if primary_quote_asset
+        else None
+    )
 
     return {
         "realized_pnl_usd": realized_pnl_usd,
@@ -171,23 +330,57 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
         "profit_factor": profit_factor,
         "trade_pnl_stats_by_quote_asset": trade_stats_by_asset,
         "trade_pnl_stats": primary_trade_stats,
+        "strategy_profile_by_quote_asset": strategy_profile_by_asset,
+        "strategy_profile": primary_strategy_profile,
     }
 
 
 def calculate_external_flow(transfers: Iterable[WalletTransfer]) -> dict:
     external_in = 0.0
     external_out = 0.0
+    inflow_sources = defaultdict(float)
+    outflow_destinations = defaultdict(float)
+    unknown_inflow_counterparties = 0
+    unknown_outflow_counterparties = 0
+    external_inflow_transfer_count = 0
+    external_outflow_transfer_count = 0
     for transfer in transfers:
         if not transfer.external:
             continue
         if transfer.direction == "in":
             external_in += transfer.amount_usd
+            external_inflow_transfer_count += 1
+            counterparty = str(transfer.counterparty or "").strip()
+            if counterparty:
+                inflow_sources[counterparty] += transfer.amount_usd
+            else:
+                unknown_inflow_counterparties += 1
         else:
             external_out += transfer.amount_usd
+            external_outflow_transfer_count += 1
+            counterparty = str(transfer.counterparty or "").strip()
+            if counterparty:
+                outflow_destinations[counterparty] += transfer.amount_usd
+            else:
+                unknown_outflow_counterparties += 1
+
+    def concentration(values, total):
+        return round(max(values.values()) / total * 100, 2) if values and total else None
+
     return {
         "external_inflow_usd": round(external_in, 2),
         "external_outflow_usd": round(external_out, 2),
         "net_external_flow_usd": round(external_in - external_out, 2),
+        "external_inflow_transfer_count": external_inflow_transfer_count,
+        "external_outflow_transfer_count": external_outflow_transfer_count,
+        "external_inflow_counterparty_count": len(inflow_sources),
+        "external_outflow_counterparty_count": len(outflow_destinations),
+        "unknown_inflow_counterparty_count": unknown_inflow_counterparties,
+        "unknown_outflow_counterparty_count": unknown_outflow_counterparties,
+        "largest_inflow_source_share_pct": concentration(inflow_sources, external_in),
+        "largest_outflow_destination_share_pct": concentration(
+            outflow_destinations, external_out
+        ),
     }
 
 
@@ -202,6 +395,21 @@ def evaluate_wallet(
     flow = calculate_external_flow(transfer_items)
     primary_pnl = pnl["primary_realized_pnl"]
     profit_value = primary_pnl if primary_pnl is not None else pnl["realized_pnl_usd"]
+    strategy_profile = pnl.get("strategy_profile") or {}
+    if pnl.get("matched_proceeds_usd"):
+        flow["external_inflow_to_matched_proceeds_pct"] = round(
+            flow["external_inflow_usd"] / pnl["matched_proceeds_usd"] * 100,
+            2,
+        )
+    else:
+        flow["external_inflow_to_matched_proceeds_pct"] = None
+    if pnl.get("realized_pnl_usd") and pnl["realized_pnl_usd"] > 0:
+        flow["external_inflow_to_realized_pnl_multiple"] = round(
+            flow["external_inflow_usd"] / pnl["realized_pnl_usd"],
+            2,
+        )
+    else:
+        flow["external_inflow_to_realized_pnl_multiple"] = None
 
     flags = []
     if pnl["closed_trades"] < min_closed_trades:
@@ -225,11 +433,34 @@ def evaluate_wallet(
         )
     ):
         flags.append("profit_concentrated_in_few_trades")
+    if (
+        meaningful_trade_sample
+        and strategy_profile.get("observed_span_days") is not None
+        and strategy_profile["observed_span_days"] < 7
+    ):
+        flags.append("short_observation_window")
+    if (
+        meaningful_trade_sample
+        and strategy_profile.get("observed_months", 0) >= 3
+        and strategy_profile.get("largest_profitable_month_share_pct") is not None
+        and strategy_profile["largest_profitable_month_share_pct"] > 75
+    ):
+        flags.append("profit_concentrated_in_few_periods")
     comparable_profit = abs(profit_value or 0)
     if flow["external_inflow_usd"] > 0 and pnl["primary_quote_asset"] not in USD_LIKE_ASSETS:
         flags.append("external_flows_require_quote_conversion")
     elif flow["external_inflow_usd"] > max(100.0, comparable_profit * 2):
         flags.append("external_inflows_are_large_relative_to_realized_pnl")
+    if (
+        pnl["primary_quote_asset"] in USD_LIKE_ASSETS
+        and flow.get("external_inflow_counterparty_count") == 1
+        and (flow.get("largest_inflow_source_share_pct") or 0) >= 90
+        and flow["external_inflow_usd"] > max(
+            1_000.0,
+            abs(pnl.get("realized_pnl_usd") or 0) * 2,
+        )
+    ):
+        flags.append("external_inflows_concentrated_in_one_source")
 
     quality = 0
     if pnl["closed_trades"] >= 50:

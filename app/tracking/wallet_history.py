@@ -5,10 +5,14 @@ from typing import Any, Iterable, Mapping, Optional
 CONTAMINATION_FLAGS = {
     "incomplete_cost_basis_or_inbound_tokens",
     "external_inflows_are_large_relative_to_realized_pnl",
+    "external_inflows_concentrated_in_one_source",
     "external_flows_require_quote_conversion",
     "mixed_quote_assets_require_conversion",
     "unpriced_or_unrecognized_swaps",
     "unpriced_or_unrecognized_transfers",
+    "profit_concentrated_in_few_trades",
+    "profit_concentrated_in_few_periods",
+    "short_observation_window",
 }
 
 
@@ -58,6 +62,7 @@ def _positive_realized_candidate(item: Mapping[str, Any]) -> bool:
 
 def _accounting_fingerprint(item: Mapping[str, Any]) -> tuple:
     """Return fields that change when the observed trading history changes."""
+    profile = item.get("strategy_profile") or {}
     return (
         item.get("primary_realized_pnl"),
         item.get("closed_trades"),
@@ -65,6 +70,9 @@ def _accounting_fingerprint(item: Mapping[str, Any]) -> tuple:
         item.get("losses"),
         item.get("external_inflow_usd"),
         item.get("external_outflow_usd"),
+        profile.get("observed_span_days"),
+        profile.get("profitable_months"),
+        profile.get("realized_roi_on_matched_cost_basis_pct"),
     )
 
 
@@ -163,6 +171,7 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "quality_score": quality,
         "closed_trades": closed_trades,
         "external_inflow_usd": external_inflow,
+        "latest_strategy_profile": last.get("strategy_profile") or {},
         "note": (
             "This is historical accounting evidence only. It requires matched cost basis, "
             "low deposit contamination, and repeated runs; it never makes a wallet copy-trade ready."

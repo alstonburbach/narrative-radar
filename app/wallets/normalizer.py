@@ -234,7 +234,17 @@ def _normalize_transfers(
         if price is None:
             unpriced += 1
             continue
-        transfers.append(WalletTransfer(timestamp, signature, direction, SOL_ASSET, quantity * price))
+        counterparty = from_account if direction == "in" else to_account
+        transfers.append(
+            WalletTransfer(
+                timestamp,
+                signature,
+                direction,
+                SOL_ASSET,
+                quantity * price,
+                counterparty=counterparty,
+            )
+        )
 
     for entry in transaction.get("tokenTransfers") or []:
         mint = _mint(entry)
@@ -253,7 +263,17 @@ def _normalize_transfers(
         if price is None:
             unpriced += 1
             continue
-        transfers.append(WalletTransfer(timestamp, signature, direction, asset or mint, quantity * price))
+        counterparty = from_account if direction == "in" else to_account
+        transfers.append(
+            WalletTransfer(
+                timestamp,
+                signature,
+                direction,
+                asset or mint,
+                quantity * price,
+                counterparty=counterparty,
+            )
+        )
     return transfers, unpriced
 
 

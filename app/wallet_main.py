@@ -54,6 +54,19 @@ def main(argv=None):
             f"{(pnl.get('trade_pnl_stats') or {}).get('largest_win_share_pct', 'n/a')}% "
             "from largest winning trade"
         )
+        profile = pnl.get("strategy_profile") or {}
+        print(
+            "Observed strategy window: "
+            f"{profile.get('observed_span_days', 'n/a')} days / "
+            f"{profile.get('profitable_months', 'n/a')} profitable months / "
+            f"{profile.get('style', 'n/a')}"
+        )
+        flow = report.get("external_flow") or {}
+        print(
+            "External flow sources: "
+            f"{flow.get('external_inflow_counterparty_count', 0)} known inflow source(s); "
+            f"largest share {flow.get('largest_inflow_source_share_pct', 'n/a')}%"
+        )
         print(f"Research candidate: {report['research_candidate']}")
         history = report["wallet_history"]
         print(
