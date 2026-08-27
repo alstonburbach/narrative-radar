@@ -17,6 +17,19 @@ on:
         required: false
         default: ""
         type: string
+      order_preview_usd:
+        description: Optional notional for a non-executing manual-review preview
+        required: false
+        default: ""
+        type: string
+      order_side:
+        description: Side for the non-executing order preview
+        required: false
+        default: buy
+        type: choice
+        options:
+          - buy
+          - sell
 
 jobs:
   analyze:
@@ -25,6 +38,8 @@ jobs:
       CONTRACT: ${{ inputs.contract }}
       CHAIN: ${{ inputs.chain }}
       PAPER_USD: ${{ inputs.paper_usd }}
+      ORDER_PREVIEW_USD: ${{ inputs.order_preview_usd }}
+      ORDER_SIDE: ${{ inputs.order_side || 'buy' }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
     steps:
@@ -44,11 +59,14 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Run paper analysis
         run: |
+          ANALYSIS_ARGS=(--contract "$CONTRACT" --chain "$CHAIN" --json)
           if [ -n "$PAPER_USD" ]; then
-            python -m app.main --contract "$CONTRACT" --chain "$CHAIN" --paper-usd "$PAPER_USD" --json > analysis.json
-          else
-            python -m app.main --contract "$CONTRACT" --chain "$CHAIN" --json > analysis.json
+            ANALYSIS_ARGS+=(--paper-usd "$PAPER_USD")
           fi
+          if [ -n "$ORDER_PREVIEW_USD" ]; then
+            ANALYSIS_ARGS+=(--order-preview-usd "$ORDER_PREVIEW_USD" --order-side "$ORDER_SIDE")
+          fi
+          python -m app.main "${ANALYSIS_ARGS[@]}" > analysis.json
           python - <<'PY'
           import json
           import os
@@ -76,6 +94,8 @@ jobs:
               handle.write(f"- On-chain activity: `{onchain.get('status')}`; holders=`{onchain.get('holder_count', 'n/a')}`, transfer txns=`{onchain.get('transfer_transaction_count_24h', 'n/a')}`, active owners=`{onchain.get('unique_active_wallets_24h', 'n/a')}`\\n")
               handle.write(f"- Scanned supply coverage: `{onchain.get('scanned_supply_coverage_pct', 'n/a')}`; largest scanned owner share=`{onchain.get('largest_scanned_owner_share_pct', 'n/a')}`\\n")
               handle.write(f"- On-chain trend: `{onchain.get('history', {}).get('state', 'not_collected')}` across `{onchain.get('history', {}).get('run_count', 0)}` snapshots\\n")
+              preview = report.get("order_preview") or {}
+              handle.write(f"- Order preview: `{preview.get('status', 'not_requested')}`; manual approval=`{preview.get('manual_approval_required', False)}`; execution enabled=`{preview.get('execution_enabled', False)}`\\n")
               handle.write(f"- Risk: `{red_team.get('risk_level')}`\\n")
               handle.write(f"- Research: `{report.get('research', {}).get('status')}`\\n")
           PY

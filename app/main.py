@@ -3,6 +3,7 @@ import json
 from typing import Optional
 
 from app.pipeline import run_analysis
+from app.execution.order_preview import build_order_preview
 
 
 def create_research_job(contract_address: str, chain: str) -> dict:
@@ -27,6 +28,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chain", default="unknown", help="Chain id, such as base or solana")
     parser.add_argument("--research-limit", type=int, default=5)
     parser.add_argument("--paper-usd", type=float, default=None)
+    parser.add_argument(
+        "--order-preview-usd",
+        type=float,
+        default=None,
+        help="Build a manual-review order preview without submitting an order",
+    )
+    parser.add_argument(
+        "--order-side",
+        choices=("buy", "sell"),
+        default="buy",
+        help="Side used for the non-executing order preview",
+    )
     parser.add_argument("--no-research", action="store_true")
     parser.add_argument(
         "--no-onchain",
@@ -129,6 +142,34 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         print("\nPaper projections:")
         for row in report["paper"]["projections"]:
             print(f"- ${row['target_market_cap']:,.0f} MC -> ${row['estimated_value_usd']:,.2f} value / ${row['estimated_pnl_usd']:,.2f} PnL")
+    preview = report.get("order_preview")
+    if preview:
+        print("\nOrder preview:")
+        print(
+            "- "
+            + preview["side"].upper()
+            + " "
+            + str(preview["notional_usd"])
+            + " ("
+            + preview["status"]
+            + ")"
+        )
+        print("- Estimated token amount: " + str(preview.get("estimated_token_amount", "n/a")))
+        print(
+            "- Manual approval required: "
+            + str(preview["manual_approval_required"])
+            + "; execution enabled: "
+            + str(preview["execution_enabled"])
+        )
+        for check in preview["checks"]:
+            print(
+                "- ["
+                + check["status"]
+                + "] "
+                + check["name"]
+                + ": "
+                + check["detail"]
+            )
     print("\nNo orders are placed. This is research and paper-analysis output only.")
 
 
@@ -156,6 +197,16 @@ def main(argv=None) -> int:
     )
     if provider_error:
         report["research"]["error"] = provider_error
+
+    report["order_preview"] = (
+        build_order_preview(
+            report.get("market", {}),
+            side=args.order_side,
+            amount_usd=args.order_preview_usd,
+        )
+        if args.order_preview_usd is not None
+        else None
+    )
 
     if args.as_json:
         print(json.dumps(report, indent=2, sort_keys=True))

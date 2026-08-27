@@ -15,7 +15,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
-- Produces hypothetical market-cap projections without placing orders and surfaces position size versus current liquidity.
+- Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
@@ -52,6 +52,10 @@ Wallet reports also measure whether profit is concentrated in a few winning trad
 
 Wallet reports also show the realized-PnL observation window, profitable calendar months, approximate realized ROI on matched cost basis, holding style, realized drawdown, and known external-flow counterparties. A meaningful sample compressed into less than seven days, dominated by one profitable period, funded mostly by one known external source, or carrying a drawdown above 50% of matched cost basis is flagged. These are risk filters for research, not proof that a wallet owner is a scammer or that a strategy will continue.
 
+## Manual order previews
+
+Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
+
 ## Run from GitHub Actions
 
 Open Actions, choose `discover narratives` to search a sector before you know a contract, or choose `analyze token` to verify a specific token. Add `TAVILY_API_KEY` as a repository secret if live web research is wanted. Each run produces a JSON report artifact and a short job summary.
@@ -72,4 +76,4 @@ Copy-trading execution is intentionally not implemented. A positive wallet score
 
 All output is research and paper-analysis output. It is not financial advice, does not predict returns, and never submits a trade.
 
-Paper projections now include a current-liquidity size screen for the hypothetical entry and each target value. It is a rough risk label—not an exact slippage calculation—and does not change the market-cap multiple math.
+Paper projections now include a current-liquidity size screen for the hypothetical entry and each target value. Manual order previews reuse that screen. It is a rough risk label—not an exact slippage calculation—and does not change the market-cap multiple math.
