@@ -59,6 +59,7 @@ jobs:
               handle.write(f"- Radar score: `{score.get('radar_score')}` ({score.get('rating')})\\n")
               handle.write(f"- Narrative evidence: `{narrative.get('quality_score')}/100` ({narrative.get('classification')})\\n")
               handle.write(f"- Independent domains: `{narrative.get('independent_domain_count')}`\\n")
+              handle.write(f"- Source content matches: `{narrative.get('content_matches')}`\\n")
               handle.write(f"- Counterevidence leads: `{narrative.get('counterevidence_leads')}`\\n")
               handle.write(f"- Risk: `{red_team.get('risk_level')}`\\n")
               handle.write(f"- Research: `{report.get('research', {}).get('status')}`\\n")

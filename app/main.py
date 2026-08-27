@@ -55,6 +55,12 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
         f"{narrative_quality.get('quality_score', 0)}/100 "
         f"({narrative_quality.get('classification', 'insufficient_evidence')})"
     )
+    verification = report.get("research", {}).get("verification", {})
+    print(
+        "Source checks: "
+        f"{verification.get('content_matches', 0)} content matches / "
+        f"{verification.get('fetch_failures', 0)} fetch failures"
+    )
     for warning in narrative_quality.get("warnings", []):
         print(f"- [evidence] {warning}")
     print(f"Risk level: {report['red_team']['risk_level']}")

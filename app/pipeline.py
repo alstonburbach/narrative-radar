@@ -9,6 +9,7 @@ from app.agents.narrative_detective import (
 from app.agents.narrative_quality import assess_narrative_quality
 from app.agents.red_team import run_red_team, summarize_red_team
 from app.collectors.market import fetch_market_data
+from app.collectors.source_verifier import verify_source_leads
 from app.database.db import (
     initialize_database,
     save_evidence,
@@ -51,6 +52,7 @@ def run_analysis(
         "query": None,
         "result_count": 0,
         "error": None,
+        "verification": {"status": "not_run"},
     }
 
     if research_provider is not None and market.get("found"):
@@ -74,6 +76,15 @@ def run_analysis(
             research["error"] = None
         else:
             research["error"] = lens_research.get("error")
+        evidence, verification = verify_source_leads(
+            evidence,
+            identity_terms=[
+                contract_address,
+                market.get("token_name"),
+                market.get("token_symbol"),
+            ],
+        )
+        research["verification"] = verification
         if persist:
             for item in evidence:
                 save_evidence(contract_address, item)

@@ -9,6 +9,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Searches public web results through Tavily when `TAVILY_API_KEY` is configured.
 - Separates search leads from manually verified primary-source evidence.
 - Searches separate lenses for builders, adoption, funding, token structure, and counterevidence, then measures source independence and corroboration.
+- Fetches selected primary/on-chain/secondary leads and checks whether the project identity appears in the underlying page, while keeping that content match separate from official verification.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections without placing orders.
 - Includes a wallet accounting foundation that matches realized PnL to FIFO cost basis and keeps external deposits/withdrawals separate.
@@ -20,6 +21,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 python -m pip install -r requirements.txt
 cp .env.example .env
 python -m app.main --contract TOKEN_CONTRACT --chain base --paper-usd 100
+python -m app.discovery_main --topic "stablecoin rails" --json
 ```
 
 Without a Tavily key, the market, red-team, score, and paper stages still run; web research is marked as unavailable.
@@ -30,7 +32,7 @@ To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_m
 
 ## Run from GitHub Actions
 
-Open Actions, choose `analyze token`, select `Run workflow`, and enter a contract and chain. Add `TAVILY_API_KEY` as a repository secret if live web research is wanted. The run produces a JSON report artifact and a short job summary.
+Open Actions, choose `discover narratives` to search a sector before you know a contract, or choose `analyze token` to verify a specific token. Add `TAVILY_API_KEY` as a repository secret if live web research is wanted. Each run produces a JSON report artifact and a short job summary.
 
 ## Wallet-quality design
 

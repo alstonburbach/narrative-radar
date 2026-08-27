@@ -62,6 +62,12 @@ def assess_narrative_quality(
     social_sources = source_types.get("social_lead", 0)
     positive_lenses = sorted(set(lens_counts) & POSITIVE_LENSES)
     counterevidence_leads = lens_counts.get("counterevidence", 0)
+    content_matches = sum(
+        1 for item in items if _value(item, "verification_status") == "content_match"
+    )
+    fetch_failures = sum(
+        1 for item in items if _value(item, "verification_status") == "fetch_failed"
+    )
 
     if len(positive_lenses) >= 4:
         breadth_score = 20
@@ -77,6 +83,8 @@ def assess_narrative_quality(
 
     if verified_primary:
         source_score = 25
+    elif content_matches and (primary_candidates or onchain_sources):
+        source_score = 18
     elif primary_candidates or onchain_sources:
         source_score = 15
     elif secondary_sources:
@@ -120,6 +128,8 @@ def assess_narrative_quality(
         warnings.append("Counterevidence search returned leads that require manual review.")
     if "counterevidence" not in searched:
         warnings.append("Counterevidence has not been searched yet.")
+    if fetch_failures:
+        warnings.append("Some high-value source leads could not be fetched for content checking.")
 
     return {
         "quality_score": quality_score,
@@ -130,6 +140,8 @@ def assess_narrative_quality(
         "positive_lenses_covered": positive_lenses,
         "source_breakdown": dict(source_types),
         "verified_primary_sources": verified_primary,
+        "content_matches": content_matches,
+        "fetch_failures": fetch_failures,
         "counterevidence_leads": counterevidence_leads,
         "searched_lenses": sorted(searched),
         "warnings": warnings,
