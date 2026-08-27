@@ -51,6 +51,21 @@ def test_wallet_history_does_not_call_identical_rechecks_a_strategy():
     assert result["history_progressed"] is False
 
 
+def test_wallet_history_requires_recent_positive_runs():
+    result = compare_wallet_history(
+        [
+            _run("2026-08-27", 100),
+            _run("2026-08-28", 120),
+            _run("2026-08-29", 140),
+            _run("2026-08-30", -10, candidate=False, quality=20),
+        ]
+    )
+
+    assert result["strategy_classification"] == "recent_performance_mixed"
+    assert result["state"] == "weakening"
+    assert result["recent_positive_realized_candidate_runs"] == 2
+
+
 def test_wallet_history_downgrades_deposit_or_cost_basis_contamination():
     result = compare_wallet_history(
         [

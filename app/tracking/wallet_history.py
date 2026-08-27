@@ -94,6 +94,10 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
     last = items[-1]
     candidate_runs = sum(_positive_realized_candidate(item) for item in items)
     contaminated_runs = sum(bool(_flags(item) & CONTAMINATION_FLAGS) for item in items)
+    recent_items = items[-3:]
+    recent_candidate_runs = sum(
+        _positive_realized_candidate(item) for item in recent_items
+    )
     distinct_accounting_snapshots = len(
         {_accounting_fingerprint(item) for item in items}
     )
@@ -113,13 +117,20 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
 
     if (
         len(items) >= 3
-        and candidate_runs >= 3
+        and recent_candidate_runs == 3
         and contaminated_runs == 0
         and history_progressed
     ):
         classification = "repeatable_realized_candidate"
-    elif len(items) >= 3 and candidate_runs >= 3 and not history_progressed:
+    elif (
+        len(items) >= 3
+        and recent_candidate_runs == 3
+        and contaminated_runs == 0
+        and not history_progressed
+    ):
         classification = "same_snapshot_repeated"
+    elif len(items) >= 3 and recent_candidate_runs < 3:
+        classification = "recent_performance_mixed"
     elif contaminated_runs:
         classification = "contaminated_or_incomplete"
     elif candidate_runs >= 2:
@@ -143,6 +154,7 @@ def compare_wallet_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "first_run_at": first.get("analyzed_at"),
         "last_run_at": last.get("analyzed_at"),
         "positive_realized_candidate_runs": candidate_runs,
+        "recent_positive_realized_candidate_runs": recent_candidate_runs,
         "contaminated_or_incomplete_runs": contaminated_runs,
         "distinct_accounting_snapshots": distinct_accounting_snapshots,
         "history_progressed": history_progressed,
