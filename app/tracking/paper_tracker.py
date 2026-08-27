@@ -10,6 +10,29 @@ def _number(value: Any):
         return None
 
 
+def _liquidity_context(position_usd: float, liquidity_usd: Optional[float]) -> dict:
+    if liquidity_usd is None or liquidity_usd <= 0:
+        return {
+            "position_to_liquidity_pct": None,
+            "liquidity_risk": "unavailable",
+        }
+    ratio = position_usd / liquidity_usd * 100
+    if ratio <= 1:
+        risk = "low"
+    elif ratio <= 5:
+        risk = "moderate"
+    elif ratio <= 10:
+        risk = "high"
+    elif ratio <= 25:
+        risk = "very_high"
+    else:
+        risk = "extreme"
+    return {
+        "position_to_liquidity_pct": round(ratio, 2),
+        "liquidity_risk": risk,
+    }
+
+
 def project_paper_position(
     market: Mapping[str, Any],
     amount_usd: float,
@@ -25,6 +48,9 @@ def project_paper_position(
             "status": "unavailable",
             "reason": "A positive market cap is required for a projection.",
         }
+
+    liquidity_usd = _number(market.get("liquidity_usd")) if market else None
+    entry_liquidity = _liquidity_context(amount, liquidity_usd)
 
     if target_market_caps is None:
         target_market_caps = [
@@ -43,6 +69,7 @@ def project_paper_position(
                 "estimated_value_usd": round(value, 2),
                 "estimated_pnl_usd": round(value - amount, 2),
                 "roi_pct": round((multiple - 1) * 100, 2),
+                "target_to_current_liquidity": _liquidity_context(value, liquidity_usd),
             }
         )
 
@@ -51,6 +78,8 @@ def project_paper_position(
         "paper_only": True,
         "entry_market_cap": entry_market_cap,
         "amount_usd": amount,
+        "entry_liquidity_usd": liquidity_usd,
+        "entry_liquidity_context": entry_liquidity,
         "projections": projections,
-        "note": "Projections use market-cap multiples and ignore fees, slippage, taxes, and supply changes.",
+        "note": "Projections use market-cap multiples. Liquidity fields are a current-liquidity size screen, not an exact slippage estimate; fees, taxes, and supply changes are excluded.",
     }

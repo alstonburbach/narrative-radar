@@ -15,7 +15,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
-- Produces hypothetical market-cap projections without placing orders.
+- Produces hypothetical market-cap projections without placing orders and surfaces position size versus current liquidity.
 - Includes a wallet accounting foundation that matches realized PnL to FIFO cost basis and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
@@ -71,3 +71,5 @@ Copy-trading execution is intentionally not implemented. A positive wallet score
 ## Safety
 
 All output is research and paper-analysis output. It is not financial advice, does not predict returns, and never submits a trade.
+
+Paper projections now include a current-liquidity size screen for the hypothetical entry and each target value. It is a rough risk label—not an exact slippage calculation—and does not change the market-cap multiple math.
