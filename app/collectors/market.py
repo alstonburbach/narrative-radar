@@ -14,6 +14,10 @@ def _number(value):
         return None
 
 
+def _same_address(left, right):
+    return bool(left and right and str(left).strip().casefold() == str(right).strip().casefold())
+
+
 def fetch_market_data(contract_address: str, chain: str = None) -> dict:
     if not contract_address or not contract_address.strip():
         raise ValueError("contract_address is required")
@@ -50,6 +54,29 @@ def fetch_market_data(contract_address: str, chain: str = None) -> dict:
             "reason": "no_active_pair",
             "collected_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    requested_address = contract_address.strip()
+    addressed_pairs = [
+        pair
+        for pair in pairs
+        if (pair.get("baseToken") or {}).get("address")
+        or (pair.get("quoteToken") or {}).get("address")
+    ]
+    base_pairs = [
+        pair
+        for pair in pairs
+        if _same_address((pair.get("baseToken") or {}).get("address"), requested_address)
+    ]
+    if addressed_pairs and not base_pairs:
+        return {
+            "found": False,
+            "contract_address": contract_address,
+            "requested_chain": requested_chain or None,
+            "reason": "token_not_base_token",
+            "collected_at": datetime.now(timezone.utc).isoformat(),
+        }
+    if base_pairs:
+        pairs = base_pairs
 
     best_pair = max(
         pairs,
