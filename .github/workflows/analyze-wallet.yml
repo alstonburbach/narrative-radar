@@ -27,6 +27,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Restore wallet history
+        uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-wallet-db-${{ github.run_id }}
+          restore-keys: narrative-radar-wallet-db-
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Run wallet analysis
@@ -41,6 +47,7 @@ jobs:
               report = json.load(handle)
           pnl = report.get("pnl", {})
           flow = report.get("external_flow", {})
+          history = report.get("wallet_history", {})
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write("## Wallet analysis\\n")
               handle.write(f"- Research candidate: `{report.get('research_candidate')}`\\n")
@@ -48,6 +55,7 @@ jobs:
               handle.write(f"- Closed trades: `{pnl.get('closed_trades')}`\\n")
               handle.write(f"- Realized PnL by quote asset: `{pnl.get('realized_pnl_by_quote_asset')}`\\n")
               handle.write(f"- External inflow: `${flow.get('external_inflow_usd', 0)}`\\n")
+              handle.write(f"- Strategy repeatability: `{history.get('strategy_classification')}` / `{history.get('state')}` across `{history.get('run_count', 0)}` runs\\n")
               handle.write("\\nCopy-trading execution is disabled.\\n")
           PY
       - name: Upload wallet report

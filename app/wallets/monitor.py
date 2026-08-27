@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from app.collectors.wallet_provider import WalletProvider
@@ -20,6 +21,7 @@ def analyze_wallet(
     )
     report = evaluate_normalized_activity(activity, min_closed_trades=min_closed_trades)
     report["wallet_address"] = wallet_address
+    report["analyzed_at"] = datetime.now(timezone.utc).isoformat()
     report["transaction_count_fetched"] = len(transactions)
     report["execution_enabled"] = False
     return report

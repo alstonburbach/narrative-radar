@@ -167,3 +167,41 @@ def test_discovery_history_persists_compact_signal_labels(monkeypatch, tmp_path)
     assert run_id == 1
     assert history[0]["candidate_signal_labels"] == ["stablecoin rails", "payment APIs"]
     assert history[0]["failed_lens_count"] == 1
+
+
+def test_wallet_history_persists_realized_pnl_and_contamination_flags(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "narrative.db")
+    db.initialize_database()
+    report = {
+        "wallet_address": "wallet",
+        "analyzed_at": "2026-08-27T00:00:00+00:00",
+        "quality_score": 72,
+        "research_candidate": True,
+        "copy_trade_ready": False,
+        "flags": ["incomplete_cost_basis_or_inbound_tokens"],
+        "pnl": {
+            "closed_trades": 21,
+            "wins": 13,
+            "losses": 8,
+            "primary_realized_pnl": 12.5,
+            "primary_quote_asset": "USD",
+            "realized_pnl_usd": 12.5,
+            "unmatched_sell_value_usd": 3,
+            "profit_factor": 1.5,
+            "win_rate_pct": 61.9,
+            "quote_assets": ["USD"],
+        },
+        "external_flow": {
+            "external_inflow_usd": 100,
+            "external_outflow_usd": 25,
+        },
+    }
+
+    run_id = db.save_wallet_run(report)
+    history = db.get_wallet_history("wallet")
+
+    assert run_id == 1
+    assert history[0]["primary_realized_pnl"] == 12.5
+    assert history[0]["primary_quote_asset"] == "USD"
+    assert history[0]["external_inflow_usd"] == 100
+    assert history[0]["flags"] == ["incomplete_cost_basis_or_inbound_tokens"]
