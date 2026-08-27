@@ -518,3 +518,138 @@ def save_discovery_run(report: dict) -> int:
                 metrics["classification"],
                 metrics["independent_domain_count"],
                 metrics["lead_count"],
+                metrics["candidate_signal_count"],
+                metrics["searched_lens_count"],
+                metrics["failed_lens_count"],
+                json.dumps(metrics["candidate_signal_labels"]),
+                json.dumps(metrics),
+            ),
+        )
+        return cursor.lastrowid
+
+
+def get_discovery_history(
+    topic: str,
+    chain: str = "unknown",
+    limit: int = 20,
+) -> list[dict]:
+    limit = max(1, min(int(limit), 200))
+    chain = (chain or "unknown").strip().lower()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, topic, chain, started_at, status, quality_score,
+                   classification, independent_domain_count, lead_count,
+                   candidate_signal_count, searched_lens_count,
+                   failed_lens_count, candidate_signal_labels
+            FROM discovery_runs
+            WHERE topic = ? AND chain = ?
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            (topic, chain, limit),
+        ).fetchall()
+    history = []
+    for row in reversed(rows):
+        item = dict(row)
+        try:
+            item["candidate_signal_labels"] = json.loads(
+                item.get("candidate_signal_labels") or "[]"
+            )
+        except (TypeError, json.JSONDecodeError):
+            item["candidate_signal_labels"] = []
+        history.append(item)
+    return history
+
+
+def save_wallet_run(report: dict) -> int:
+    """Persist compact wallet accounting metrics for repeatability checks."""
+    pnl = report.get("pnl") or {}
+    flow = report.get("external_flow") or {}
+    flags = report.get("flags") or []
+    metrics = {
+        "wallet_address": report.get("wallet_address"),
+        "analyzed_at": report.get("analyzed_at") or datetime.now(timezone.utc).isoformat(),
+        "quality_score": report.get("quality_score"),
+        "research_candidate": bool(report.get("research_candidate")),
+        "copy_trade_ready": bool(report.get("copy_trade_ready")),
+        "closed_trades": pnl.get("closed_trades") or 0,
+        "wins": pnl.get("wins") or 0,
+        "losses": pnl.get("losses") or 0,
+        "primary_realized_pnl": pnl.get("primary_realized_pnl"),
+        "primary_quote_asset": pnl.get("primary_quote_asset"),
+        "realized_pnl_usd": pnl.get("realized_pnl_usd"),
+        "external_inflow_usd": flow.get("external_inflow_usd") or 0,
+        "external_outflow_usd": flow.get("external_outflow_usd") or 0,
+        "unmatched_sell_value_usd": pnl.get("unmatched_sell_value_usd"),
+        "profit_factor": pnl.get("profit_factor"),
+        "win_rate_pct": pnl.get("win_rate_pct"),
+        "quote_assets": pnl.get("quote_assets") or [],
+        "flags": flags,
+    }
+    if not metrics["wallet_address"]:
+        raise ValueError("wallet_address is required")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO wallet_runs (
+                wallet_address, analyzed_at, quality_score, research_candidate,
+                copy_trade_ready, closed_trades, wins, losses,
+                primary_realized_pnl, primary_quote_asset, realized_pnl_usd,
+                external_inflow_usd, external_outflow_usd, unmatched_sell_value_usd,
+                profit_factor, win_rate_pct, quote_assets, flags, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                metrics["wallet_address"],
+                metrics["analyzed_at"],
+                metrics["quality_score"],
+                int(metrics["research_candidate"]),
+                int(metrics["copy_trade_ready"]),
+                metrics["closed_trades"],
+                metrics["wins"],
+                metrics["losses"],
+                metrics["primary_realized_pnl"],
+                metrics["primary_quote_asset"],
+                metrics["realized_pnl_usd"],
+                metrics["external_inflow_usd"],
+                metrics["external_outflow_usd"],
+                metrics["unmatched_sell_value_usd"],
+                metrics["profit_factor"],
+                metrics["win_rate_pct"],
+                json.dumps(metrics["quote_assets"]),
+                json.dumps(metrics["flags"]),
+                json.dumps(metrics),
+            ),
+        )
+        return cursor.lastrowid
+
+
+def get_wallet_history(wallet_address: str, limit: int = 20) -> list[dict]:
+    limit = max(1, min(int(limit), 200))
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, wallet_address, analyzed_at, quality_score,
+                   research_candidate, copy_trade_ready, closed_trades, wins,
+                   losses, primary_realized_pnl, primary_quote_asset,
+                   realized_pnl_usd, external_inflow_usd, external_outflow_usd,
+                   unmatched_sell_value_usd, profit_factor, win_rate_pct,
+                   quote_assets, flags
+            FROM wallet_runs
+            WHERE wallet_address = ?
+            ORDER BY analyzed_at DESC
+            LIMIT ?
+            """,
+            (wallet_address, limit),
+        ).fetchall()
+    history = []
+    for row in reversed(rows):
+        item = dict(row)
+        for key in ("quote_assets", "flags"):
+            try:
+                item[key] = json.loads(item.get(key) or "[]")
+            except (TypeError, json.JSONDecodeError):
+                item[key] = []
+        history.append(item)
+    return history

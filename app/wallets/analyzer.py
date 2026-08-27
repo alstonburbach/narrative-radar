@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from statistics import median
 from typing import Iterable, List
 
 from app.wallets.ledger import WalletSwap, WalletTransfer
@@ -25,6 +26,7 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
     losses = 0
     gross_profit = 0.0
     gross_loss = 0.0
+    trade_pnls_by_asset = defaultdict(list)
 
     for swap in sorted(swaps, key=lambda item: item.timestamp):
         if swap.side == "buy":
@@ -66,6 +68,7 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
                 losses += 1
                 gross_loss += abs(sell_pnl)
             realized_by_asset[asset] += sell_pnl
+            trade_pnls_by_asset[asset].append(sell_pnl)
 
     quote_assets = sorted(
         set(realized_by_asset)
@@ -104,6 +107,40 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
     if primary_quote_asset and primary_quote_asset == "USD" and gross_loss > 0:
         profit_factor = round(gross_profit / gross_loss, 4)
 
+    def trade_stats(values):
+        if not values:
+            return {
+                "trade_count": 0,
+                "median_trade_pnl": None,
+                "average_trade_pnl": None,
+                "average_win_pnl": None,
+                "average_loss_pnl": None,
+                "largest_win_share_pct": None,
+                "top_3_win_share_pct": None,
+            }
+        wins_only = sorted((value for value in values if value > 0), reverse=True)
+        losses_only = [value for value in values if value < 0]
+        gross_wins = sum(wins_only)
+        return {
+            "trade_count": len(values),
+            "median_trade_pnl": round(median(values), 8),
+            "average_trade_pnl": round(sum(values) / len(values), 8),
+            "average_win_pnl": round(sum(wins_only) / len(wins_only), 8) if wins_only else None,
+            "average_loss_pnl": round(sum(losses_only) / len(losses_only), 8) if losses_only else None,
+            "largest_win_share_pct": round(wins_only[0] / gross_wins * 100, 2) if gross_wins else None,
+            "top_3_win_share_pct": round(sum(wins_only[:3]) / gross_wins * 100, 2) if gross_wins else None,
+        }
+
+    trade_stats_by_asset = {
+        asset: trade_stats(values)
+        for asset, values in trade_pnls_by_asset.items()
+    }
+    primary_trade_stats = (
+        trade_stats_by_asset.get(primary_quote_asset)
+        if primary_quote_asset
+        else None
+    )
+
     return {
         "realized_pnl_usd": realized_pnl_usd,
         "realized_pnl_by_quote_asset": {
@@ -132,6 +169,8 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
         "losses": losses,
         "win_rate_pct": round((wins / closed_trades) * 100, 2) if closed_trades else None,
         "profit_factor": profit_factor,
+        "trade_pnl_stats_by_quote_asset": trade_stats_by_asset,
+        "trade_pnl_stats": primary_trade_stats,
     }
 
 
@@ -173,6 +212,19 @@ def evaluate_wallet(
         flags.append("incomplete_cost_basis_or_inbound_tokens")
     if len(pnl["quote_assets"]) > 1:
         flags.append("mixed_quote_assets_require_conversion")
+    trade_stats = pnl.get("trade_pnl_stats") or {}
+    meaningful_trade_sample = pnl["closed_trades"] >= max(5, min_closed_trades)
+    if meaningful_trade_sample and (
+        (
+            trade_stats.get("largest_win_share_pct") is not None
+            and trade_stats["largest_win_share_pct"] > 75
+        )
+        or (
+            trade_stats.get("top_3_win_share_pct") is not None
+            and trade_stats["top_3_win_share_pct"] > 90
+        )
+    ):
+        flags.append("profit_concentrated_in_few_trades")
     comparable_profit = abs(profit_value or 0)
     if flow["external_inflow_usd"] > 0 and pnl["primary_quote_asset"] not in USD_LIKE_ASSETS:
         flags.append("external_flows_require_quote_conversion")

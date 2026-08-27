@@ -54,6 +54,7 @@ jobs:
               handle.write(f"- Quality score: `{report.get('quality_score')}`\\n")
               handle.write(f"- Closed trades: `{pnl.get('closed_trades')}`\\n")
               handle.write(f"- Realized PnL by quote asset: `{pnl.get('realized_pnl_by_quote_asset')}`\\n")
+              handle.write(f"- Largest winning trade share: `{(pnl.get('trade_pnl_stats') or {}).get('largest_win_share_pct')}`\\n")
               handle.write(f"- External inflow: `${flow.get('external_inflow_usd', 0)}`\\n")
               handle.write(f"- Strategy repeatability: `{history.get('strategy_classification')}` / `{history.get('state')}` across `{history.get('run_count', 0)}` runs\\n")
               handle.write("\\nCopy-trading execution is disabled.\\n")

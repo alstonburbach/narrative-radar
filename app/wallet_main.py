@@ -49,6 +49,11 @@ def main(argv=None):
         print(f"Transactions fetched: {report['transaction_count_fetched']}")
         print(f"Closed trades: {pnl['closed_trades']}")
         print(f"Realized PnL by quote asset: {pnl['realized_pnl_by_quote_asset']}")
+        print(
+            "Profit concentration: "
+            f"{(pnl.get('trade_pnl_stats') or {}).get('largest_win_share_pct', 'n/a')}% "
+            "from largest winning trade"
+        )
         print(f"Research candidate: {report['research_candidate']}")
         history = report["wallet_history"]
         print(

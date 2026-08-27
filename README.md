@@ -48,6 +48,8 @@ For a bounded research watchlist, run `python -m app.wallet_cohort_main --wallet
 
 Repeated wallet analyses use the same SQLite history to test whether positive realized PnL persists. A candidate is downgraded when cost basis is incomplete, quote assets are mixed without conversion, transfers are unpriced, or external inflows are large relative to realized PnL. Three clean positive snapshots are still only a research candidate—not a guarantee and never an automatic copy-trading instruction.
 
+Wallet reports also measure whether profit is concentrated in a few winning trades. With a meaningful sample, a wallet whose largest win supplies more than 75% of gross winning PnL or whose top three wins supply more than 90% is flagged and removed from research-candidate status; this helps separate repeatable activity from one-trade luck.
+
 ## Run from GitHub Actions
 
 Open Actions, choose `discover narratives` to search a sector before you know a contract, or choose `analyze token` to verify a specific token. Add `TAVILY_API_KEY` as a repository secret if live web research is wanted. Each run produces a JSON report artifact and a short job summary.

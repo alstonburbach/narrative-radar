@@ -36,3 +36,27 @@ def test_wallet_with_short_history_is_not_copy_candidate():
     assert result["research_candidate"] is False
     assert "insufficient_closed_trade_history" in result["flags"]
     assert result["copy_trade_ready"] is False
+
+
+def test_wallet_with_one_dominant_win_is_not_a_steady_research_candidate():
+    swaps = []
+    for index in range(19):
+        swaps.extend(
+            [
+                WalletSwap(f"2026-01-{index + 1:02d}", f"buy-{index}", "TOKEN", "buy", 1, 10),
+                WalletSwap(f"2026-02-{index + 1:02d}", f"sell-{index}", "TOKEN", "sell", 1, 11),
+            ]
+        )
+    swaps.extend(
+        [
+            WalletSwap("2026-03-01", "buy-big", "TOKEN", "buy", 1, 10),
+            WalletSwap("2026-03-02", "sell-big", "TOKEN", "sell", 1, 110),
+        ]
+    )
+
+    result = evaluate_wallet(swaps)
+
+    assert result["pnl"]["closed_trades"] == 20
+    assert result["pnl"]["trade_pnl_stats"]["largest_win_share_pct"] > 75
+    assert "profit_concentrated_in_few_trades" in result["flags"]
+    assert result["research_candidate"] is False
