@@ -55,6 +55,8 @@ jobs:
               handle.write(f"- Quality score: `{report.get('quality_score')}`\\n")
               handle.write(f"- Closed trades: `{pnl.get('closed_trades')}`\\n")
               handle.write(f"- Realized PnL by quote asset: `{pnl.get('realized_pnl_by_quote_asset')}`\\n")
+              handle.write(f"- Matched fees: `{pnl.get('primary_matched_fees')}`; fee drag=`{pnl.get('primary_fee_drag_pct')}`% of pre-fee realized profit\\n")
+              handle.write(f"- Unpriced or missing swap fees: `{report.get('ingestion', {}).get('unpriced_swap_fees', 0)}`\\n")
               handle.write(f"- Largest winning trade share: `{(pnl.get('trade_pnl_stats') or {}).get('largest_win_share_pct')}`\\n")
               handle.write(f"- Observation window: `{profile.get('observed_span_days')}` days; profitable months=`{profile.get('profitable_months')}`; style=`{profile.get('style')}`\\n")
               handle.write(f"- Max realized drawdown: `{profile.get('max_realized_drawdown')}` (`{profile.get('max_realized_drawdown_on_matched_cost_basis_pct')}`% of matched cost)\\n")

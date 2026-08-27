@@ -75,3 +75,69 @@ def test_normalizer_preserves_external_transfer_counterparty():
     )
 
     assert activity.transfers[0].counterparty == "Source111"
+
+
+def stablecoin_buy_transaction(signature, fee=5_000):
+    transaction = {
+        "signature": signature,
+        "timestamp": 1,
+        "type": "SWAP",
+        "events": {
+            "swap": {
+                "tokenInputs": [
+                    {
+                        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                        "rawTokenAmount": {
+                            "tokenAmount": "100000000",
+                            "decimals": 6,
+                        },
+                        "fromUserAccount": WALLET,
+                    }
+                ],
+                "tokenOutputs": [
+                    {
+                        "mint": TOKEN,
+                        "rawTokenAmount": {"tokenAmount": "1000", "decimals": 0},
+                        "toUserAccount": WALLET,
+                    }
+                ],
+            }
+        },
+    }
+    if fee is not None:
+        transaction["fee"] = fee
+    return transaction
+
+
+def test_usd_quoted_swap_does_not_silently_drop_unpriced_sol_fee():
+    activity = normalize_helius_transactions(
+        WALLET,
+        [stablecoin_buy_transaction("buy")],
+    )
+
+    assert activity.swaps[0].quote_asset == "USD"
+    assert activity.swaps[0].fee_usd == 0
+    assert activity.unpriced_swap_fees == 1
+    report = evaluate_normalized_activity(activity, min_closed_trades=0)
+    assert "unpriced_or_missing_swap_fees" in report["flags"]
+    assert report["research_candidate"] is False
+
+
+def test_usd_quoted_swap_converts_sol_fee_with_historical_resolver():
+    activity = normalize_helius_transactions(
+        WALLET,
+        [stablecoin_buy_transaction("buy")],
+        quote_price_resolver=lambda asset, timestamp: 100.0,
+    )
+
+    assert activity.swaps[0].fee_usd == 0.0005
+    assert activity.unpriced_swap_fees == 0
+
+
+def test_missing_network_fee_is_reported_as_incomplete():
+    transaction = swap_transaction("buy", 1, "buy")
+    transaction.pop("fee")
+
+    activity = normalize_helius_transactions(WALLET, [transaction])
+
+    assert activity.unpriced_swap_fees == 1

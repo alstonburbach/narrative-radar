@@ -50,6 +50,11 @@ def main(argv=None):
         print(f"Closed trades: {pnl['closed_trades']}")
         print(f"Realized PnL by quote asset: {pnl['realized_pnl_by_quote_asset']}")
         print(
+            "Matched fee burden: "
+            f"{pnl.get('primary_matched_fees', 'n/a')} "
+            f"({pnl.get('primary_fee_drag_pct', 'n/a')}% of pre-fee realized profit)"
+        )
+        print(
             "Profit concentration: "
             f"{(pnl.get('trade_pnl_stats') or {}).get('largest_win_share_pct', 'n/a')}% "
             "from largest winning trade"

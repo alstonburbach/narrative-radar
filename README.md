@@ -16,7 +16,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections without placing orders and surfaces position size versus current liquidity.
-- Includes a wallet accounting foundation that matches realized PnL to FIFO cost basis and keeps external deposits/withdrawals separate.
+- Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
 
@@ -46,7 +46,7 @@ To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_m
 
 For a bounded research watchlist, run `python -m app.wallet_cohort_main --wallets "$WALLETS" --json`, where `WALLETS` is newline-separated. The cohort report ranks only wallets with repeated clean realized-PnL evidence, marks shorter histories as early-watch, and excludes contaminated, mixed, unchanged, or failed results from candidate ranking. A run accepts at most 50 wallets.
 
-Repeated wallet analyses use the same SQLite history to test whether positive realized PnL persists. A candidate is downgraded when cost basis is incomplete, quote assets are mixed without conversion, transfers are unpriced, or external inflows are large relative to realized PnL. Three clean positive snapshots are still only a research candidate—not a guarantee and never an automatic copy-trading instruction.
+Repeated wallet analyses use the same SQLite history to test whether positive realized PnL persists. Missing or unpriced Solana network fees fail closed instead of being silently treated as zero, and strategies whose matched fees consume more than half of pre-fee realized profit are excluded from candidate status. A candidate is downgraded when cost basis is incomplete, quote assets are mixed without conversion, transfers are unpriced, or external inflows are large relative to realized PnL. Three clean positive snapshots are still only a research candidate—not a guarantee and never an automatic copy-trading instruction.
 
 Wallet reports also measure whether profit is concentrated in a few winning trades. With a meaningful sample, a wallet whose largest win supplies more than 75% of gross winning PnL or whose top three wins supply more than 90% is flagged and removed from research-candidate status; this helps separate repeatable activity from one-trade luck.
 

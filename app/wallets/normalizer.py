@@ -19,6 +19,7 @@ class NormalizedWalletActivity:
     transaction_count: int
     skipped_transactions: int = 0
     unpriced_swaps: int = 0
+    unpriced_swap_fees: int = 0
     unpriced_transfers: int = 0
     warnings: List[str] = None
     source: str = "helius"
@@ -35,6 +36,7 @@ class NormalizedWalletActivity:
             "normalized_transfers": len(self.transfers),
             "skipped_transactions": self.skipped_transactions,
             "unpriced_swaps": self.unpriced_swaps,
+            "unpriced_swap_fees": self.unpriced_swap_fees,
             "unpriced_transfers": self.unpriced_transfers,
             "warnings": list(self.warnings),
         }
@@ -158,13 +160,13 @@ def _normalize_swap(
     transaction: dict,
     wallet_address: str,
     quote_price_resolver: Optional[Callable[[str, str], Optional[float]]] = None,
-) -> Optional[WalletSwap]:
+) -> tuple[Optional[WalletSwap], bool]:
     event = (transaction.get("events") or {}).get("swap")
     if not isinstance(event, dict):
-        return None
+        return None, False
     spent, received = _legs(event, wallet_address)
     if not spent or not received:
-        return None
+        return None, False
 
     quote_in = next((leg for leg in spent if leg[0] in {SOL_ASSET, "USD"}), None)
     target_out = next((leg for leg in received if leg[0] not in {SOL_ASSET, "USD"}), None)
@@ -175,7 +177,7 @@ def _normalize_swap(
         target_in = next((leg for leg in spent if leg[0] not in {SOL_ASSET, "USD"}), None)
         quote_out = next((leg for leg in received if leg[0] in {SOL_ASSET, "USD"}), None)
         if target_in is None or quote_out is None:
-            return None
+            return None, False
         side = "sell"
         target = target_in
         quote = quote_out
@@ -184,30 +186,45 @@ def _normalize_swap(
     timestamp = _timestamp(transaction)
     quote_value = quote_quantity
     quote_asset = asset
+    fee_lamports = _number(transaction.get("fee"))
+    fee_complete = fee_lamports is not None
+    network_fee_sol = (fee_lamports or 0.0) / 1_000_000_000
     fee = 0.0
-    if asset == SOL_ASSET:
-        fee_lamports = _number(transaction.get("fee"))
-        fee = (fee_lamports or 0.0) / 1_000_000_000
 
-    if asset == SOL_ASSET and quote_price_resolver is not None:
-        price = quote_price_resolver(asset, timestamp)
-        if price is not None:
-            quote_value = quote_quantity * price
-            fee *= price
-            quote_asset = "USD"
+    if asset == SOL_ASSET:
+        fee = network_fee_sol
+        if quote_price_resolver is not None:
+            price = quote_price_resolver(SOL_ASSET, timestamp)
+            if price is not None:
+                quote_value = quote_quantity * price
+                fee *= price
+                quote_asset = "USD"
+    elif asset == "USD" and network_fee_sol > 0:
+        fee_price = (
+            quote_price_resolver(SOL_ASSET, timestamp)
+            if quote_price_resolver is not None
+            else None
+        )
+        if fee_price is None:
+            fee_complete = False
+        else:
+            fee = network_fee_sol * fee_price
 
     if asset not in {SOL_ASSET, "USD"}:
-        return None
+        return None, False
 
-    return WalletSwap(
-        timestamp=timestamp,
-        tx_hash=_signature(transaction),
-        token_address=target[1],
-        side=side,
-        token_amount=target[2],
-        quote_usd=quote_value,
-        fee_usd=fee,
-        quote_asset=quote_asset,
+    return (
+        WalletSwap(
+            timestamp=timestamp,
+            tx_hash=_signature(transaction),
+            token_address=target[1],
+            side=side,
+            token_amount=target[2],
+            quote_usd=quote_value,
+            fee_usd=fee,
+            quote_asset=quote_asset,
+        ),
+        fee_complete,
     )
 
 
@@ -286,6 +303,7 @@ def normalize_helius_transactions(
     transfers = []
     skipped_transactions = 0
     unpriced_swaps = 0
+    unpriced_swap_fees = 0
     unpriced_transfers = 0
     warnings = []
     items = list(transactions)
@@ -293,11 +311,15 @@ def normalize_helius_transactions(
     for transaction in items:
         transaction_type = str(transaction.get("type") or "").upper()
         if transaction_type == "SWAP":
-            swap = _normalize_swap(transaction, wallet_address, quote_price_resolver)
+            swap, fee_complete = _normalize_swap(
+                transaction, wallet_address, quote_price_resolver
+            )
             if swap is None:
                 unpriced_swaps += 1
             else:
                 swaps.append(swap)
+                if not fee_complete:
+                    unpriced_swap_fees += 1
         elif transaction_type == "TRANSFER":
             normalized, unpriced = _normalize_transfers(
                 transaction, wallet_address, quote_price_resolver
@@ -309,6 +331,10 @@ def normalize_helius_transactions(
 
     if unpriced_swaps:
         warnings.append("Some swaps lacked a complete SOL/token leg and were excluded.")
+    if unpriced_swap_fees:
+        warnings.append(
+            "Some swap network fees were missing or lacked a compatible historical quote price."
+        )
     if unpriced_transfers:
         warnings.append("Some transfers lacked a historical USD price and were excluded from cash-flow totals.")
     return NormalizedWalletActivity(
@@ -317,6 +343,7 @@ def normalize_helius_transactions(
         transaction_count=len(items),
         skipped_transactions=skipped_transactions,
         unpriced_swaps=unpriced_swaps,
+        unpriced_swap_fees=unpriced_swap_fees,
         unpriced_transfers=unpriced_transfers,
         warnings=warnings,
     )

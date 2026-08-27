@@ -222,3 +222,41 @@ def test_large_single_source_funding_is_flagged_separately_from_pnl():
     assert result["external_flow"]["largest_inflow_source_share_pct"] == 100.0
     assert "external_inflows_concentrated_in_one_source" in result["flags"]
     assert result["research_candidate"] is False
+
+
+def test_wallet_reports_fee_drag_and_rejects_fee_dependent_profit():
+    swaps = []
+    for index in range(20):
+        day = index + 1
+        swaps.extend(
+            [
+                WalletSwap(
+                    f"2026-01-{day:02d}T00:00:00+00:00",
+                    f"buy-fee-{index}",
+                    "TOKEN",
+                    "buy",
+                    1,
+                    100,
+                    fee_usd=4,
+                ),
+                WalletSwap(
+                    f"2026-01-{day:02d}T12:00:00+00:00",
+                    f"sell-fee-{index}",
+                    "TOKEN",
+                    "sell",
+                    1,
+                    110,
+                    fee_usd=4,
+                ),
+            ]
+        )
+
+    result = evaluate_wallet(swaps)
+    pnl = result["pnl"]
+
+    assert pnl["primary_realized_pnl_before_fees"] == 200
+    assert pnl["primary_matched_fees"] == 160
+    assert pnl["primary_realized_pnl"] == 40
+    assert pnl["primary_fee_drag_pct"] == 80.0
+    assert "high_realized_fee_burden" in result["flags"]
+    assert result["research_candidate"] is False

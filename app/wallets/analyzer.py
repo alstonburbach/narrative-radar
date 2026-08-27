@@ -171,6 +171,8 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
     matched_proceeds_by_asset = defaultdict(float)
     matched_cost_basis_by_asset = defaultdict(float)
     unmatched_sell_by_asset = defaultdict(float)
+    observed_fees_by_asset = defaultdict(float)
+    matched_fees_by_asset = defaultdict(float)
     closed_trades = 0
     wins = 0
     losses = 0
@@ -180,27 +182,33 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
     trade_records_by_asset = defaultdict(list)
 
     for swap in sorted(swaps, key=lambda item: item.timestamp):
+        asset = swap.quote_asset.upper()
+        observed_fees_by_asset[asset] += swap.fee_usd
         if swap.side == "buy":
+            unit_fee = swap.fee_usd / swap.token_amount
             unit_cost = (swap.quote_usd + swap.fee_usd) / swap.token_amount
-            lots[(swap.token_address, swap.quote_asset.upper())].append(
-                [swap.token_amount, unit_cost, swap.timestamp]
+            lots[(swap.token_address, asset)].append(
+                [swap.token_amount, unit_cost, swap.timestamp, unit_fee]
             )
             continue
 
         remaining = swap.token_amount
         unit_proceeds = max(0.0, swap.quote_usd - swap.fee_usd) / swap.token_amount
+        unit_sell_fee = swap.fee_usd / swap.token_amount
         sell_pnl = 0.0
         sell_matched = 0.0
         sell_cost_basis = 0.0
         sell_proceeds = 0.0
         holding_days_total = 0.0
         holding_amount = 0.0
-        asset = swap.quote_asset.upper()
         while remaining > 1e-12 and lots[(swap.token_address, asset)]:
-            lot_amount, unit_cost, lot_timestamp = lots[(swap.token_address, asset)][0]
+            lot_amount, unit_cost, lot_timestamp, unit_buy_fee = lots[(swap.token_address, asset)][0]
             matched_amount = min(remaining, lot_amount)
             cost = matched_amount * unit_cost
             proceeds = matched_amount * unit_proceeds
+            matched_fees_by_asset[asset] += matched_amount * (
+                unit_buy_fee + unit_sell_fee
+            )
             matched_cost_basis_by_asset[asset] += cost
             matched_proceeds_by_asset[asset] += proceeds
             sell_pnl += proceeds - cost
@@ -253,6 +261,8 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
         | set(matched_proceeds_by_asset)
         | set(matched_cost_basis_by_asset)
         | set(unmatched_sell_by_asset)
+        | set(observed_fees_by_asset)
+        | set(matched_fees_by_asset)
     )
     primary_quote_asset = quote_assets[0] if len(quote_assets) == 1 else None
     primary_realized_pnl = (
@@ -284,6 +294,34 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
     profit_factor = None
     if primary_quote_asset and primary_quote_asset == "USD" and gross_loss > 0:
         profit_factor = round(gross_profit / gross_loss, 4)
+
+    realized_before_fees_by_asset = {
+        asset: realized_by_asset[asset] + matched_fees_by_asset[asset]
+        for asset in quote_assets
+    }
+    primary_matched_fees = (
+        round(matched_fees_by_asset[primary_quote_asset], 8)
+        if primary_quote_asset
+        else None
+    )
+    primary_realized_before_fees = (
+        round(realized_before_fees_by_asset[primary_quote_asset], 8)
+        if primary_quote_asset
+        else None
+    )
+    primary_fee_drag_pct = (
+        round(
+            matched_fees_by_asset[primary_quote_asset]
+            / realized_before_fees_by_asset[primary_quote_asset]
+            * 100,
+            2,
+        )
+        if (
+            primary_quote_asset
+            and realized_before_fees_by_asset[primary_quote_asset] > 0
+        )
+        else None
+    )
 
     def trade_stats(values):
         if not values:
@@ -339,6 +377,21 @@ def calculate_realized_pnl(swaps: Iterable[WalletSwap]) -> dict:
         },
         "primary_realized_pnl": primary_realized_pnl,
         "primary_quote_asset": primary_quote_asset,
+        "primary_realized_pnl_before_fees": primary_realized_before_fees,
+        "primary_matched_fees": primary_matched_fees,
+        "primary_fee_drag_pct": primary_fee_drag_pct,
+        "realized_pnl_before_fees_by_quote_asset": {
+            asset: round(value, 8)
+            for asset, value in realized_before_fees_by_asset.items()
+        },
+        "matched_fees_by_quote_asset": {
+            asset: round(value, 8)
+            for asset, value in matched_fees_by_asset.items()
+        },
+        "observed_fees_by_quote_asset": {
+            asset: round(value, 8)
+            for asset, value in observed_fees_by_asset.items()
+        },
         "matched_proceeds_usd": matched_proceeds_usd,
         "matched_cost_basis_usd": matched_cost_basis_usd,
         "unmatched_sell_value_usd": unmatched_sell_value_usd,
@@ -452,6 +505,11 @@ def evaluate_wallet(
         flags.append("incomplete_cost_basis_or_inbound_tokens")
     if len(pnl["quote_assets"]) > 1:
         flags.append("mixed_quote_assets_require_conversion")
+    if (
+        pnl.get("primary_fee_drag_pct") is not None
+        and pnl["primary_fee_drag_pct"] > 50
+    ):
+        flags.append("high_realized_fee_burden")
     trade_stats = pnl.get("trade_pnl_stats") or {}
     meaningful_trade_sample = pnl["closed_trades"] >= max(5, min_closed_trades)
     if meaningful_trade_sample and (
@@ -548,6 +606,8 @@ def evaluate_normalized_activity(activity, min_closed_trades: int = 20) -> dict:
     ingestion_flags = []
     if activity.unpriced_swaps:
         ingestion_flags.append("unpriced_or_unrecognized_swaps")
+    if activity.unpriced_swap_fees:
+        ingestion_flags.append("unpriced_or_missing_swap_fees")
     if activity.unpriced_transfers:
         ingestion_flags.append("unpriced_or_unrecognized_transfers")
     if ingestion_flags:
