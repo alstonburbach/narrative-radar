@@ -11,6 +11,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections without placing orders.
 - Includes a wallet accounting foundation that matches realized PnL to FIFO cost basis and keeps external deposits/withdrawals separate.
+- Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 
 ## Run locally
 
@@ -21,6 +22,8 @@ python -m app.main --contract TOKEN_CONTRACT --chain base --paper-usd 100
 ```
 
 Without a Tavily key, the market, red-team, score, and paper stages still run; web research is marked as unavailable.
+
+To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_main WALLET_ADDRESS`. SOL-quoted PnL is reported in SOL unless a historical quote-price resolver is added; it is never converted using today’s price.
 
 ## Run from GitHub Actions
 

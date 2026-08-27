@@ -11,6 +11,7 @@ class WalletSwap:
     token_amount: float
     quote_usd: float
     fee_usd: float = 0.0
+    quote_asset: str = "USD"
 
     def __post_init__(self):
         if self.side not in {"buy", "sell"}:
@@ -19,6 +20,8 @@ class WalletSwap:
             raise ValueError("token_amount must be greater than zero")
         if self.quote_usd < 0 or self.fee_usd < 0:
             raise ValueError("quote_usd and fee_usd cannot be negative")
+        if not self.quote_asset or not self.quote_asset.strip():
+            raise ValueError("quote_asset is required")
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,57 @@
+name: analyze wallet
+
+on:
+  workflow_dispatch:
+    inputs:
+      wallet:
+        description: Solana wallet address
+        required: true
+        type: string
+      limit:
+        description: Maximum finalized transactions to inspect
+        required: false
+        default: "500"
+        type: string
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    env:
+      WALLET: ${{ inputs.wallet }}
+      LIMIT: ${{ inputs.limit }}
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run wallet analysis
+        run: python -m app.wallet_main "$WALLET" --limit "$LIMIT" --json > wallet-analysis.json
+      - name: Write job summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          with open("wallet-analysis.json", "r", encoding="utf-8") as handle:
+              report = json.load(handle)
+          pnl = report.get("pnl", {})
+          flow = report.get("external_flow", {})
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("## Wallet analysis\\n")
+              handle.write(f"- Research candidate: `{report.get('research_candidate')}`\\n")
+              handle.write(f"- Quality score: `{report.get('quality_score')}`\\n")
+              handle.write(f"- Closed trades: `{pnl.get('closed_trades')}`\\n")
+              handle.write(f"- Realized PnL by quote asset: `{pnl.get('realized_pnl_by_quote_asset')}`\\n")
+              handle.write(f"- External inflow: `${flow.get('external_inflow_usd', 0)}`\\n")
+              handle.write("\\nCopy-trading execution is disabled.\\n")
+          PY
+      - name: Upload wallet report
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-wallet-analysis
+          path: wallet-analysis.json
