@@ -126,3 +126,25 @@ def test_signal_clustering_rejects_social_only_or_counterevidence_only_terms():
 
     assert cluster_signal_terms(social_only) == []
     assert cluster_signal_terms(counter_only) == []
+
+def test_signal_clustering_does_not_treat_subdomains_as_independent_sources():
+    evidence = [
+        {
+            "claim": "Stablecoin rails adoption",
+            "quote": "stablecoin rails processed payments",
+            "source_url": "https://docs.example.com/usage",
+            "source_type": "primary_candidate",
+            "research_lens": "official_builders",
+        },
+        {
+            "claim": "Stablecoin rails adoption",
+            "quote": "stablecoin rails processed payments",
+            "source_url": "https://blog.example.com/metrics",
+            "source_type": "secondary_lead",
+            "research_lens": "adoption_usage",
+        },
+    ]
+
+    labels = {signal["label"] for signal in cluster_signal_terms(evidence)}
+
+    assert "stablecoin rails" not in labels

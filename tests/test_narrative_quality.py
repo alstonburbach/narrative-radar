@@ -99,3 +99,33 @@ def test_lens_research_is_partial_when_one_lens_fails():
     assert report["status"] == "partial"
     assert "counterevidence" not in report["searched_lenses"]
     assert len(evidence) == 4
+
+def test_quality_collapses_subdomains_from_the_same_publisher_family():
+    evidence = [
+        Evidence(
+            "Builder docs",
+            "https://docs.example.com/project",
+            "primary_candidate",
+            confidence=0.6,
+            research_lens="official_builders",
+        ),
+        Evidence(
+            "Usage blog",
+            "https://blog.example.com/usage",
+            "secondary_lead",
+            confidence=0.6,
+            research_lens="adoption_usage",
+        ),
+        Evidence(
+            "Independent data",
+            "https://independent.org/report",
+            "onchain_data",
+            confidence=0.6,
+            research_lens="onchain_tokenomics",
+        ),
+    ]
+
+    result = assess_narrative_quality(evidence)
+
+    assert result["independent_domains"] == ["example.com", "independent.org"]
+    assert result["independent_domain_count"] == 2

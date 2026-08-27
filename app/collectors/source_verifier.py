@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 
 from app.database.models import Evidence
+from app.research_domains import source_domain_family
 
 
 CHECKABLE_SOURCE_TYPES = {"primary_candidate", "onchain_data", "secondary_lead"}
@@ -157,7 +158,7 @@ def verify_source_leads(
     for item in items:
         source_type = _field(item, "source_type")
         url = str(_field(item, "source_url", "")).strip()
-        domain = (urlparse(url).hostname or "").lower().removeprefix("www.")
+        domain = source_domain_family(url)
         eligible = source_type in CHECKABLE_SOURCE_TYPES and domain not in seen_domains
         if not eligible or checked >= max(1, int(max_sources)):
             skipped += 1

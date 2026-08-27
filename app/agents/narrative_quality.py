@@ -1,6 +1,6 @@
 from collections import Counter
 from typing import Any, Iterable, Mapping, Optional
-from urllib.parse import urlparse
+from app.research_domains import source_domain_family
 
 
 POSITIVE_LENSES = {
@@ -18,7 +18,7 @@ def _value(item: Any, key: str, default: Any = None) -> Any:
 
 
 def _domain(url: str) -> str:
-    return (urlparse(str(url)).hostname or "").lower().removeprefix("www.")
+    return source_domain_family(url)
 
 
 def _number(value: Any) -> Optional[float]:

@@ -100,3 +100,38 @@ def test_public_source_fetcher_rejects_local_urls():
         assert "private or local" in str(exc)
     else:
         raise AssertionError("local URL should not be fetched")
+
+def test_source_verifier_checks_only_one_page_per_publisher_family():
+    evidence = [
+        Evidence(
+            "Docs lead",
+            "https://docs.example.com/project",
+            "primary_candidate",
+            confidence=0.6,
+        ),
+        Evidence(
+            "Blog lead",
+            "https://blog.example.com/project",
+            "secondary_lead",
+            confidence=0.6,
+        ),
+    ]
+    fetcher = FakeFetcher(
+        {
+            "https://docs.example.com/project": {
+                "text": "Project contract 0xtest",
+                "retrieved_at": "2026-08-27T00:00:00+00:00",
+            }
+        }
+    )
+
+    result, summary = verify_source_leads(
+        evidence,
+        identity_terms=["0xtest"],
+        fetcher=fetcher,
+    )
+
+    assert summary["checked"] == 1
+    assert summary["skipped"] == 1
+    assert fetcher.urls == ["https://docs.example.com/project"]
+    assert result[1].verification_status == "unverified_search_lead"
