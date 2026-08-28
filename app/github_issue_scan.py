@@ -176,6 +176,7 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
     preview = report.get("order_preview") or {}
     research = report.get("research") or {}
     onchain = report.get("onchain_activity") or {}
+    security = report.get("token_security") or {}
     token_name = market.get("token_name") or "Unknown token"
     token_symbol = market.get("token_symbol") or "unknown"
 
@@ -197,6 +198,9 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
         f"| Narrative evidence | {_cell(quality.get('quality_score'))}/100 ({_cell(quality.get('classification'))}) |",
         f"| Independent domains | {_cell(quality.get('independent_domain_count'))} |",
         f"| Risk | {_cell(risk.get('risk_level'))} |",
+        f"| Token security | {_cell(security.get('status'))} / {_cell(security.get('risk_level'))} |",
+        f"| Security blockers | {_cell(len(security.get('hard_blockers') or []))} |",
+        f"| Bundler analysis | {_cell((security.get('bundler_analysis') or {}).get('status'))} |",
         f"| Decision gate | {_cell(gate.get('status'))} |",
     ]
 
@@ -233,6 +237,40 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
                 f"- **{_cell(str(flag.get('severity') or 'review').upper())}:** "
                 f"{_cell(flag.get('message') or 'Review required.')}"
             )
+
+    security_flags = list(security.get("flags") or [])
+    if security_flags:
+        lines.extend(["", "### Scam and rug-risk screen"])
+        for flag in security_flags[:10]:
+            lines.append(
+                f"- **{_cell(str(flag.get('severity') or 'review').upper())}:** "
+                f"{_cell(flag.get('message') or 'Review required.')}"
+            )
+    holder_distribution = security.get("holder_distribution") or {}
+    lp_distribution = security.get("lp_distribution") or {}
+    lines.extend(
+        [
+            "",
+            "### Distribution and bundler coverage",
+            (
+                "- Largest shown unlocked/unexcluded holder: `"
+                f"{_cell(holder_distribution.get('largest_unlocked_unexcluded_share_pct'))}%`"
+            ),
+            (
+                "- Shown unlocked/unexcluded top-holder share: `"
+                f"{_cell(holder_distribution.get('top_unlocked_unexcluded_share_pct'))}%`"
+            ),
+            (
+                "- Shown unlocked/unexcluded LP share: `"
+                f"{_cell(lp_distribution.get('top_unlocked_unexcluded_share_pct'))}%`"
+            ),
+            (
+                "- Bundler/linked-wallet status: `"
+                f"{_cell((security.get('bundler_analysis') or {}).get('status'))}` — "
+                f"{_cell((security.get('bundler_analysis') or {}).get('note'))}"
+            ),
+        ]
+    )
 
     lines.extend(["", "### Paper-only market preview"])
     if preview:

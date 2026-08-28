@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from app.agents.narrative_detective import (
     build_narrative_report,
@@ -11,6 +11,7 @@ from app.agents.red_team import run_red_team, summarize_red_team
 from app.collectors.adoption_provider import is_solana_chain
 from app.collectors.market import fetch_market_data
 from app.collectors.source_verifier import verify_source_leads
+from app.collectors.token_security import GoPlusTokenSecurityProvider
 from app.database.db import (
     get_narrative_history,
     get_onchain_activity_history,
@@ -42,6 +43,8 @@ def run_analysis(
     adoption_transfer_limit: int = 100,
     adoption_window_hours: int = 24,
     collect_onchain: bool = True,
+    security_provider: Optional[Any] = None,
+    collect_security: bool = True,
 ) -> dict:
     if not contract_address or not contract_address.strip():
         raise ValueError("contract_address is required")
@@ -115,6 +118,52 @@ def run_analysis(
                 save_evidence(contract_address, item)
     elif not market.get("found"):
         research["status"] = "skipped_no_market_pair"
+
+    token_security = {
+        "status": "not_requested" if not collect_security else "pending",
+        "provider": None,
+        "chain": market.get("chain") or requested_chain,
+        "contract_address": contract_address,
+        "risk_level": "unknown",
+        "hard_blockers": [],
+        "promotion_eligible": False,
+        "bundler_analysis": {
+            "status": "not_available",
+            "note": "No linked-wallet or funding-cluster adapter is configured.",
+        },
+        "execution_enabled": False,
+    }
+    if collect_security:
+        if not market.get("found"):
+            token_security.update(
+                {
+                    "status": "skipped_no_market_pair",
+                    "hard_blockers": ["token_security_not_run"],
+                }
+            )
+        else:
+            provider = security_provider or GoPlusTokenSecurityProvider()
+            try:
+                security_result = provider.fetch(
+                    contract_address=contract_address,
+                    chain=market.get("chain") or requested_chain,
+                )
+                if not isinstance(security_result, Mapping):
+                    raise RuntimeError("token security provider returned invalid data")
+                token_security = dict(security_result)
+            except Exception as exc:  # noqa: BLE001 - fail closed on provider errors
+                token_security.update(
+                    {
+                        "status": "failed",
+                        "provider": getattr(provider, "provider_name", "custom"),
+                        "error_type": type(exc).__name__,
+                        "hard_blockers": ["token_security_unavailable"],
+                        "note": (
+                            "Token-security collection failed closed; no safety "
+                            "inference was made."
+                        ),
+                    }
+                )
 
     onchain_activity = {
         "status": "not_requested" if not collect_onchain else "pending",
@@ -202,7 +251,7 @@ def run_analysis(
         evidence,
         searched_lenses=research.get("searched_lenses", []),
     )
-    flags = run_red_team(market, evidence)
+    flags = run_red_team(market, evidence, token_security=token_security)
     report = build_narrative_report(
         token_name=market.get("token_name") or "Unknown",
         token_symbol=market.get("token_symbol") or "Unknown",
@@ -238,6 +287,7 @@ def run_analysis(
         score=score,
         narrative_quality=narrative_quality,
         red_team=red_team_report,
+        token_security=token_security,
         order_preview=order_preview,
     )
 
@@ -255,6 +305,7 @@ def run_analysis(
         "paper": paper,
         "order_preview": order_preview,
         "onchain_activity": onchain_activity,
+        "token_security": token_security,
         "disclaimer": "Research and paper-analysis output only. No orders are placed and no return is guaranteed.",
     }
     if persist and market.get("found"):

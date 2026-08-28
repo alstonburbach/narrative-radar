@@ -17,6 +17,24 @@ class FakeProvider:
         ][:limit]
 
 
+class FakeSecurityProvider:
+    provider_name = "fake-security"
+
+    def fetch(self, contract_address, chain):
+        return {
+            "status": "complete",
+            "provider": self.provider_name,
+            "chain": chain,
+            "contract_address": contract_address,
+            "risk_level": "low",
+            "flags": [],
+            "hard_blockers": [],
+            "promotion_eligible": True,
+            "bundler_analysis": {"status": "complete", "hard_blockers": []},
+            "execution_enabled": False,
+        }
+
+
 def test_run_analysis_connects_market_research_and_paper(monkeypatch):
     market = {
         "found": True,
@@ -47,6 +65,7 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
         research_provider=FakeProvider(),
         paper_usd=100,
         order_preview_usd=100,
+        security_provider=FakeSecurityProvider(),
     )
 
     assert report["status"] == "complete"
@@ -60,6 +79,7 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
     assert report["research"]["result_count"] == 1
     assert report["narrative"]["evidence_count"] == 1
     assert report["paper"]["projections"][0]["estimated_value_usd"] == 200
+    assert report["token_security"]["status"] == "complete"
 
 
 def test_run_analysis_persists_optional_solana_activity_snapshot(monkeypatch):
@@ -104,6 +124,7 @@ def test_run_analysis_persists_optional_solana_activity_snapshot(monkeypatch):
         "mint",
         chain="solana",
         adoption_provider=AdoptionProvider(),
+        security_provider=FakeSecurityProvider(),
     )
 
     assert report["onchain_activity"]["status"] == "complete"

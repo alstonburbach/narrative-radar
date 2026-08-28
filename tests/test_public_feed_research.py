@@ -153,6 +153,28 @@ def test_default_provider_uses_public_feeds_without_tavily_key(monkeypatch):
     assert isinstance(tavily, TavilyResearchProvider)
 
 
+def test_explicit_public_feed_mode_does_not_spend_tavily_key(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "configured-key")
+
+    provider = build_default_research_provider(
+        preferred="public_rss",
+        session=Session({}),
+    )
+
+    assert isinstance(provider, PublicFeedResearchProvider)
+
+
+def test_explicit_tavily_mode_requires_a_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+    try:
+        build_default_research_provider(preferred="tavily")
+    except RuntimeError as exc:
+        assert "TAVILY_API_KEY" in str(exc)
+    else:
+        raise AssertionError("explicit Tavily mode must not silently change providers")
+
+
 def test_feed_source_type_can_never_self_declare_as_verified_primary():
     candidate = ResearchResult(
         title="Official update",

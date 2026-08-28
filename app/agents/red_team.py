@@ -22,6 +22,7 @@ def _flag(code: str, severity: str, message: str, **details: Any) -> dict:
 def run_red_team(
     market: Mapping[str, Any],
     evidence: Iterable[Any] = (),
+    token_security: Mapping[str, Any] | None = None,
 ) -> list[dict]:
     """Return explainable risk flags for a token snapshot.
 
@@ -77,13 +78,39 @@ def run_red_team(
     if not evidence_items:
         flags.append(_flag("no_independent_evidence", "medium", "No research evidence was collected for the narrative claim."))
 
-    order = {"high": 0, "medium": 1, "low": 2}
+    security = token_security or {}
+    if token_security is not None and security.get("status") != "complete":
+        flags.append(
+            _flag(
+                "token_security_unavailable",
+                "critical",
+                "Contract-security and distribution screening is unavailable or incomplete.",
+                status=security.get("status") or "missing",
+            )
+        )
+    elif token_security is not None:
+        for item in security.get("flags") or []:
+            if not isinstance(item, Mapping):
+                continue
+            flags.append(
+                _flag(
+                    str(item.get("code") or "token_security_warning"),
+                    str(item.get("severity") or "medium"),
+                    str(item.get("message") or "Token-security review is required."),
+                    provider=security.get("provider"),
+                    **dict(item.get("details") or {}),
+                )
+            )
+
+    order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     return sorted(flags, key=lambda item: (order.get(item["severity"], 3), item["code"]))
 
 
 def summarize_red_team(flags: Iterable[Mapping[str, Any]]) -> dict:
     items = list(flags)
-    if any(item.get("severity") == "high" for item in items):
+    if any(item.get("severity") == "critical" for item in items):
+        level = "critical"
+    elif any(item.get("severity") == "high" for item in items):
         level = "high"
     elif any(item.get("severity") == "medium" for item in items):
         level = "medium"
@@ -92,6 +119,7 @@ def summarize_red_team(flags: Iterable[Mapping[str, Any]]) -> dict:
     return {
         "risk_level": level,
         "flag_count": len(items),
+        "critical_count": sum(item.get("severity") == "critical" for item in items),
         "high_count": sum(item.get("severity") == "high" for item in items),
         "medium_count": sum(item.get("severity") == "medium" for item in items),
     }

@@ -15,10 +15,13 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - On Solana, optionally records holder counts, token-account scan coverage, token supply, and bounded finalized transfer activity as separate on-chain activity proxies.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Runs narrative discovery from an owner-only phone issue form and posts material scheduled discoveries to one GitHub feed issue.
+- Scans free public feeds every four hours and runs one deeper Tavily-backed web scan daily when its key is configured, while notifying only on material evidence-backed changes.
+- Ranks cross-source narrative watch options as `research_next`, `watch_for_confirmation`, or `insufficient_evidence`; every option remains blocked from possible-buy review until an exact contract passes token checks.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
 - Applies a transparent manual-review gate that reports whether score, evidence quality, freshness, red-team risk, source checks, and optional order-preview requirements pass.
+- Uses read-only GoPlus security data on Base, BSC, Ethereum, and Solana to block obvious honeypots, sell restrictions, severe taxes, dangerous admin permissions, exposed LP ownership, and extreme holder concentration.
 - Evaluates fixed-stake paper baskets, including target hit rates, break-even winner multiples, known-cost coverage, open versus realized results, narrative-family concentration, and forward-test timestamp integrity.
 - Freezes owner-created paper signals from a phone issue, preserves the original timestamp and market-cap snapshot, and marks open signals hourly without custody or execution.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
@@ -80,12 +83,15 @@ When `HELIUS_API_KEY` is configured, Solana token analyses also collect a bounde
 
 The Solana snapshot also reports scanned supply coverage and largest/top-10 scanned-owner shares. These are concentration and scan-coverage diagnostics—not a claim that the owners are humans—and concentration is marked as a lower bound when the holder scan is incomplete.
 
-The `discover narratives` GitHub workflow runs manually and on weekdays at
-12:00 UTC. It caches compact discovery history and opens or comments on one
+The `discover narratives` GitHub workflow checks free public feeds every four
+hours and performs one deeper `auto` scan daily at 13:43 UTC (Tavily when its
+key exists, otherwise the public-feed fallback). It can also run manually. It
+caches compact discovery history and opens or comments on one
 `[RADAR FEED]` issue only when fresh cross-source candidates first appear,
 change, or materially strengthen. Unchanged or weak scans do not notify. Set
 `TAVILY_API_KEY` for broader live web research; set `HELIUS_API_KEY` for Solana
-on-chain activity collection.
+on-chain activity collection. Scheduled public-feed checks never consume the
+Tavily key; the single daily deep scan is the spend-bounded web-search pass.
 
 To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_main WALLET_ADDRESS`. SOL-quoted PnL is reported in SOL unless a historical quote-price resolver is added; it is never converted using today’s price.
 
@@ -98,6 +104,15 @@ Wallet reports also measure whether profit is concentrated in a few winning trad
 Wallet reports also show the realized-PnL observation window, profitable calendar months, approximate realized ROI on matched cost basis, holding style, realized drawdown, and known external-flow counterparties. A meaningful sample compressed into less than seven days, dominated by one profitable period, funded mostly by one known external source, or carrying a drawdown above 50% of matched cost basis is flagged. These are risk filters for research, not proof that a wallet owner is a scammer or that a strategy will continue.
 
 ## Manual order previews
+
+Every contract scan now requests a read-only GoPlus security report. The gate
+fails closed when that report is unavailable and blocks high-risk findings such
+as honeypot behavior, restrictive selling, severe taxes, closed or mutable
+contract controls, exposed liquidity ownership, or concentrated holders. These
+are heuristics, not proof that a token is safe or fraudulent. GoPlus holder data
+does not establish whether apparently separate wallets were funded together or
+bought in the same bundle, so `bundler_concentration` remains a required manual
+review item until a reliable linked-wallet adapter is added.
 
 Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, a five-minute market-snapshot freshness gate, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
 

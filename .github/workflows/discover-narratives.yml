@@ -6,7 +6,8 @@ permissions:
 
 on:
   schedule:
-    - cron: "0 12 * * 1-5"
+    - cron: "17 */4 * * *"
+    - cron: "43 13 * * *"
   workflow_dispatch:
     inputs:
       topic:
@@ -24,6 +25,15 @@ on:
         required: false
         default: "5"
         type: string
+      provider:
+        description: Research provider; auto uses Tavily when its key exists
+        required: false
+        default: public_rss
+        type: choice
+        options:
+          - public_rss
+          - auto
+          - tavily
 
 jobs:
   discover:
@@ -32,6 +42,7 @@ jobs:
       TOPIC: ${{ inputs.topic || 'crypto narratives' }}
       CHAIN: ${{ inputs.chain || 'unknown' }}
       LIMIT: ${{ inputs.limit || '5' }}
+      NARRATIVE_RESEARCH_PROVIDER: ${{ inputs.provider || (github.event.schedule == '43 13 * * *' && 'auto' || 'public_rss') }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
     steps:
       - name: Check out repository
@@ -75,6 +86,12 @@ jobs:
               handle.write("\\nCandidate signals:\\n")
               for signal in report.get("candidate_signals", [])[:10]:
                   handle.write(f"- `{signal.get('label')}` — domains={signal.get('independent_domains')}, lenses={signal.get('lenses')}\\n")
+              handle.write("\\nAutomatic watch options:\\n")
+              for option in report.get("narrative_options", [])[:5]:
+                  handle.write(
+                      f"- `{option.get('label')}` — {option.get('status')}; "
+                      f"buy review={option.get('possible_buy_review_status')}\\n"
+                  )
               history = report.get("discovery_history", {})
               handle.write(f"\\nScan durability: `{history.get('state')}` across `{history.get('run_count')}` scans\\n")
               if history.get("persisted_signals"):
@@ -113,8 +130,20 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
+                assignees: [context.repo.owner],
               });
               return;
+            }
+            const assignees = (existing.assignees || []).map(
+              (assignee) => assignee.login
+            );
+            if (!assignees.includes(context.repo.owner)) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                assignees: [...assignees, context.repo.owner],
+              });
             }
             if (existing.state !== 'open') {
               await github.rest.issues.update({
@@ -138,3 +167,4 @@ jobs:
             narrative-discovery.json
             narrative-discovery.md
             discovery-notification.json
+          retention-days: 7

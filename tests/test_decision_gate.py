@@ -32,6 +32,13 @@ def _ready_inputs():
             "counterevidence_leads": 0,
         },
         "red_team": {"risk_level": "medium"},
+        "token_security": {
+            "status": "complete",
+            "promotion_eligible": True,
+            "hard_blockers": [],
+            "bundler_analysis": {"status": "complete", "hard_blockers": []},
+            "execution_enabled": False,
+        },
     }
 
 
@@ -97,3 +104,25 @@ def test_gate_requires_explicitly_disabled_execution_for_preview():
 
     assert gate["status"] == "blocked"
     assert "execution_safety" in gate["blocking_failures"]
+
+
+def test_gate_blocks_security_risk_and_holds_for_missing_bundler_analysis():
+    inputs = _ready_inputs()
+    inputs["token_security"] = {
+        "status": "complete",
+        "promotion_eligible": False,
+        "hard_blockers": ["honeypot_detected"],
+        "bundler_analysis": {"status": "not_available"},
+        "execution_enabled": False,
+    }
+
+    blocked = evaluate_manual_review_gate(**inputs, as_of=AS_OF)
+    assert blocked["status"] == "blocked"
+    assert "token_security" in blocked["blocking_failures"]
+    assert "bundler_concentration" in blocked["review_requirements"]
+
+    inputs = _ready_inputs()
+    inputs["token_security"]["bundler_analysis"] = {"status": "not_available"}
+    research_only = evaluate_manual_review_gate(**inputs, as_of=AS_OF)
+    assert research_only["status"] == "research_only"
+    assert "bundler_concentration" in research_only["review_requirements"]

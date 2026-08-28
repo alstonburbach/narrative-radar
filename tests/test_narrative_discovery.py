@@ -148,6 +148,29 @@ def test_signal_clustering_requires_two_positive_research_lenses():
 
     assert cluster_signal_terms(evidence) == []
 
+
+def test_signal_clustering_rejects_generic_single_word_overlap():
+    evidence = [
+        {
+            "claim": "Account tooling release",
+            "quote": "Builders released account tooling.",
+            "source_url": "https://example.com/build",
+            "source_type": "primary_candidate",
+            "research_lens": "official_builders",
+        },
+        {
+            "claim": "Account adoption grows",
+            "quote": "Customers opened an account.",
+            "source_url": "https://example.org/adoption",
+            "source_type": "secondary_lead",
+            "research_lens": "adoption_usage",
+        },
+    ]
+
+    labels = {signal["label"] for signal in cluster_signal_terms(evidence)}
+
+    assert "account" not in labels
+
 def test_signal_clustering_does_not_treat_subdomains_as_independent_sources():
     evidence = [
         {
