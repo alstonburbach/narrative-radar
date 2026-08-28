@@ -17,7 +17,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
 - Applies a transparent manual-review gate that reports whether score, evidence quality, freshness, red-team risk, source checks, and optional order-preview requirements pass.
-- Evaluates fixed-stake paper baskets, including target hit rates, break-even winner multiples, known-cost coverage, open versus realized results, and narrative-family concentration.
+- Evaluates fixed-stake paper baskets, including target hit rates, break-even winner multiples, known-cost coverage, open versus realized results, narrative-family concentration, and forward-test timestamp integrity.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
@@ -62,6 +62,8 @@ Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` 
 The JSON report also includes `decision_gate`. `manual_review_ready` means the research requirements passed for a human to inspect; `research_only` means one or more non-blocking requirements still need work; `blocked` means a hard safety requirement failed. If no order preview is requested, the gate evaluates research only. The gate always reports `execution_enabled: false` and never authorizes a transaction.
 
 To test the fixed-risk basket idea, provide a JSON list (or `{ "positions": [...] }`) where each position has `label`, `entry_market_cap`, and an explicit `outcome`: `closed` with `exit_market_cap`, `lost`, or `open` with `mark_market_cap`. Optional `fees_usd`, `slippage_usd`, and `narrative_family` fields are tracked transparently. Missing costs are flagged, and open positions remain marked rather than being counted as realized profit.
+
+For a basket to count as a forward-tested strategy result, every position must also include timezone-aware `signal_detected_at`, `entry_recorded_at`, and `outcome_observed_at` timestamps. The evaluator rejects impossible ordering and future-dated observations, reports signal-to-entry latency and observed holding time, and keeps untimestamped PnL descriptive rather than presenting it as proof the radar found the move in advance.
 
 ## Run from GitHub Actions
 

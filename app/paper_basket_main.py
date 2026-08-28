@@ -16,6 +16,11 @@ def build_parser():
     )
     parser.add_argument("--stake-usd", type=float, default=50.0)
     parser.add_argument("--target-multiple", type=float, default=None)
+    parser.add_argument(
+        "--evaluated-at",
+        default=None,
+        help="Optional timezone-aware ISO timestamp for reproducible replay checks",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
@@ -68,6 +73,12 @@ def _print_human(report: dict):
         "Narrative concentration: "
         f"{report['max_narrative_family_share_pct']}% largest family"
     )
+    timing = report["temporal_integrity"]
+    print(
+        "Forward-test timing: "
+        f"{timing['verified_count']} / {report['position_count']} verified; "
+        f"eligible={timing['timing_eligible_for_strategy_validation']}"
+    )
     for warning in report["warnings"]:
         print(f"- {warning}")
     print("\nNo orders are placed. This is paper analysis only.")
@@ -81,6 +92,7 @@ def main(argv=None) -> int:
             positions,
             stake_usd=args.stake_usd,
             target_multiple=args.target_multiple,
+            evaluated_at=args.evaluated_at,
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         if args.as_json:

@@ -5,6 +5,7 @@ probability of a target, predict returns, or place orders.
 """
 
 from collections import Counter
+from datetime import datetime, timezone
 from math import isfinite
 from typing import Any, Iterable, Mapping, Optional
 
@@ -36,10 +37,28 @@ def _round(value: Optional[float]) -> Optional[float]:
     return round(value, 2) if value is not None else None
 
 
+def _utc_timestamp(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
 def evaluate_paper_basket(
     positions: Iterable[Mapping[str, Any]],
     stake_usd: float = 50.0,
     target_multiple: Optional[float] = None,
+    evaluated_at: Optional[Any] = None,
 ) -> dict:
     """Evaluate a fixed-stake basket from explicit paper outcomes.
 
@@ -55,6 +74,13 @@ def evaluate_paper_basket(
     target = _number(target_multiple)
     if target is not None and target <= 0:
         raise ValueError("target_multiple must be greater than zero")
+    evaluation_time = (
+        _utc_timestamp(evaluated_at)
+        if evaluated_at is not None
+        else datetime.now(timezone.utc)
+    )
+    if evaluation_time is None:
+        raise ValueError("evaluated_at must be a timezone-aware ISO 8601 timestamp")
 
     raw_positions = list(positions)
     if not raw_positions:
@@ -66,6 +92,8 @@ def evaluate_paper_basket(
     missing_cost_positions = []
     fee_present_count = 0
     slippage_present_count = 0
+    timing_status_counts = Counter()
+    timing_issues = []
 
     for index, position in enumerate(raw_positions, start=1):
         label = f"position_{index}"
@@ -76,6 +104,13 @@ def evaluate_paper_basket(
         }
         if not isinstance(position, Mapping):
             record["errors"].append("Position must be an object.")
+            record["temporal_integrity"] = {
+                "status": "invalid",
+                "missing_fields": [],
+                "errors": ["Position must be an object."],
+            }
+            timing_status_counts["invalid"] += 1
+            timing_issues.append(f"{label}: Position must be an object.")
             records.append(record)
             errors.extend(f"{label}: {error}" for error in record["errors"])
             continue
@@ -86,6 +121,95 @@ def evaluate_paper_basket(
         family = family or "unassigned"
         record["narrative_family"] = family
         family_counts[family] += 1
+
+        timing_fields = (
+            "signal_detected_at",
+            "entry_recorded_at",
+            "outcome_observed_at",
+        )
+        timing_values = {}
+        timing_missing = []
+        timing_errors = []
+        for key in timing_fields:
+            raw_timestamp = position.get(key)
+            parsed_timestamp = _utc_timestamp(raw_timestamp)
+            if raw_timestamp is None or not str(raw_timestamp).strip():
+                timing_missing.append(key)
+            elif parsed_timestamp is None:
+                timing_errors.append(
+                    f"{key} must be a timezone-aware ISO 8601 timestamp."
+                )
+            timing_values[key] = parsed_timestamp
+
+        if not timing_missing and not timing_errors:
+            signal_time = timing_values["signal_detected_at"]
+            entry_time = timing_values["entry_recorded_at"]
+            outcome_time = timing_values["outcome_observed_at"]
+            if signal_time > entry_time:
+                timing_errors.append(
+                    "signal_detected_at must not be after entry_recorded_at."
+                )
+            if outcome_time < entry_time:
+                timing_errors.append(
+                    "outcome_observed_at must not be before entry_recorded_at."
+                )
+            if any(value > evaluation_time for value in timing_values.values()):
+                timing_errors.append(
+                    "Paper timestamps must not be after evaluated_at."
+                )
+
+        if timing_errors:
+            timing_status = "invalid"
+        elif timing_missing:
+            timing_status = "missing"
+        else:
+            timing_status = "verified"
+        timing_status_counts[timing_status] += 1
+        timing_issues.extend(f"{label}: {error}" for error in timing_errors)
+        record["temporal_integrity"] = {
+            "status": timing_status,
+            "signal_detected_at": (
+                timing_values["signal_detected_at"].isoformat()
+                if timing_values["signal_detected_at"] is not None
+                else None
+            ),
+            "entry_recorded_at": (
+                timing_values["entry_recorded_at"].isoformat()
+                if timing_values["entry_recorded_at"] is not None
+                else None
+            ),
+            "outcome_observed_at": (
+                timing_values["outcome_observed_at"].isoformat()
+                if timing_values["outcome_observed_at"] is not None
+                else None
+            ),
+            "signal_to_entry_minutes": (
+                round(
+                    (
+                        timing_values["entry_recorded_at"]
+                        - timing_values["signal_detected_at"]
+                    ).total_seconds()
+                    / 60,
+                    2,
+                )
+                if timing_status == "verified"
+                else None
+            ),
+            "observed_holding_hours": (
+                round(
+                    (
+                        timing_values["outcome_observed_at"]
+                        - timing_values["entry_recorded_at"]
+                    ).total_seconds()
+                    / 3600,
+                    2,
+                )
+                if timing_status == "verified"
+                else None
+            ),
+            "missing_fields": timing_missing,
+            "errors": timing_errors,
+        }
 
         entry_market_cap = _number(position.get("entry_market_cap"))
         outcome = str(position.get("outcome") or "").strip().lower()
@@ -292,6 +416,24 @@ def evaluate_paper_basket(
     if family_counts:
         family_share_pct = round(max(family_counts.values()) / position_count * 100, 2)
 
+    verified_timing_count = timing_status_counts["verified"]
+    temporal_integrity = {
+        "evaluated_at": evaluation_time.isoformat(),
+        "verified_count": verified_timing_count,
+        "missing_count": timing_status_counts["missing"],
+        "invalid_count": timing_status_counts["invalid"],
+        "coverage_pct": _round(verified_timing_count / position_count * 100),
+        "timing_eligible_for_strategy_validation": (
+            all_valid and verified_timing_count == position_count
+        ),
+        "issues": timing_issues,
+        "note": (
+            "Forward-test eligibility requires a recorded signal time, entry snapshot "
+            "time, and later outcome observation for every position. Valid timing "
+            "alone does not establish profitability or repeatability."
+        ),
+    }
+
     warnings = []
     if missing_cost_positions:
         warnings.append(
@@ -313,6 +455,16 @@ def evaluate_paper_basket(
         warnings.append(
             "Every position is in one narrative family; this is not diversified "
             "by narrative."
+        )
+    if temporal_integrity["missing_count"]:
+        warnings.append(
+            "One or more positions lack signal, entry, or outcome timestamps; PnL "
+            "remains descriptive and is not eligible as a forward-tested result."
+        )
+    if temporal_integrity["invalid_count"]:
+        warnings.append(
+            "One or more position timelines are invalid or future-dated; they are "
+            "excluded from forward-test validation."
         )
     largest_winner_share = outcome_distribution[
         "largest_winner_share_of_gross_winning_pnl_pct"
@@ -368,6 +520,7 @@ def evaluate_paper_basket(
         },
         "narrative_family_counts": dict(sorted(family_counts.items())),
         "max_narrative_family_share_pct": family_share_pct,
+        "temporal_integrity": temporal_integrity,
         "target_metrics": target_metrics,
         "outcome_distribution": outcome_distribution,
         "aggregate": aggregate,

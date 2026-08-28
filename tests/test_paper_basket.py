@@ -2,7 +2,7 @@ from app.tracking.paper_basket import evaluate_paper_basket
 
 
 def _positions():
-    return [
+    positions = [
         {
             "label": "winner",
             "narrative_family": "ai",
@@ -47,6 +47,15 @@ def _positions():
             "slippage_usd": 0.5,
         },
     ]
+    for position in positions:
+        position.update(
+            {
+                "signal_detected_at": "2026-08-01T12:00:00Z",
+                "entry_recorded_at": "2026-08-01T12:15:00Z",
+                "outcome_observed_at": "2026-08-08T12:15:00Z",
+            }
+        )
+    return positions
 
 
 def test_fixed_fifty_dollar_basket_reports_asymmetric_outcome():
@@ -54,6 +63,7 @@ def test_fixed_fifty_dollar_basket_reports_asymmetric_outcome():
         _positions(),
         stake_usd=50,
         target_multiple=10,
+        evaluated_at="2026-08-10T00:00:00Z",
     )
 
     assert report["status"] == "ready"
@@ -69,6 +79,10 @@ def test_fixed_fifty_dollar_basket_reports_asymmetric_outcome():
     assert distribution["realized_winner_count"] == 1
     assert distribution["largest_winner_share_of_gross_winning_pnl_pct"] == 100.0
     assert any("winner supplies more than 75%" in warning for warning in report["warnings"])
+    timing = report["temporal_integrity"]
+    assert timing["verified_count"] == 5
+    assert timing["timing_eligible_for_strategy_validation"] is True
+    assert report["positions"][0]["temporal_integrity"]["signal_to_entry_minutes"] == 15
 
 
 def test_basket_does_not_hide_missing_costs_or_correlation():
@@ -78,7 +92,12 @@ def test_basket_does_not_hide_missing_costs_or_correlation():
         position.pop("slippage_usd")
     positions[1]["narrative_family"] = "ai"
 
-    report = evaluate_paper_basket(positions, stake_usd=50, target_multiple=10)
+    report = evaluate_paper_basket(
+        positions,
+        stake_usd=50,
+        target_multiple=10,
+        evaluated_at="2026-08-10T00:00:00Z",
+    )
 
     assert report["cost_coverage"]["complete"] is False
     assert len(report["missing_cost_positions"]) == 5
@@ -91,9 +110,51 @@ def test_invalid_position_withholds_aggregate_results():
     positions = _positions()
     positions[0].pop("exit_market_cap")
 
-    report = evaluate_paper_basket(positions, stake_usd=50)
+    report = evaluate_paper_basket(
+        positions,
+        stake_usd=50,
+        evaluated_at="2026-08-10T00:00:00Z",
+    )
 
     assert report["status"] == "incomplete"
     assert report["invalid_count"] == 1
     assert report["aggregate"]["gross_pnl_usd"] is None
     assert report["errors"]
+
+
+def test_missing_timestamps_do_not_count_as_forward_tested():
+    positions = _positions()
+    for position in positions:
+        position.pop("signal_detected_at")
+        position.pop("entry_recorded_at")
+        position.pop("outcome_observed_at")
+
+    report = evaluate_paper_basket(
+        positions,
+        stake_usd=50,
+        evaluated_at="2026-08-10T00:00:00Z",
+    )
+
+    timing = report["temporal_integrity"]
+    assert report["status"] == "ready"
+    assert timing["missing_count"] == 5
+    assert timing["timing_eligible_for_strategy_validation"] is False
+    assert any("not eligible as a forward-tested result" in item for item in report["warnings"])
+
+
+def test_invalid_or_future_chronology_fails_forward_test_validation():
+    positions = _positions()
+    positions[0]["signal_detected_at"] = "2026-08-01T12:30:00Z"
+    positions[1]["outcome_observed_at"] = "2026-08-11T00:00:00Z"
+
+    report = evaluate_paper_basket(
+        positions,
+        stake_usd=50,
+        evaluated_at="2026-08-10T00:00:00Z",
+    )
+
+    timing = report["temporal_integrity"]
+    assert timing["invalid_count"] == 2
+    assert timing["timing_eligible_for_strategy_validation"] is False
+    assert any("signal_detected_at must not be after" in item for item in timing["issues"])
+    assert any("must not be after evaluated_at" in item for item in timing["issues"])
