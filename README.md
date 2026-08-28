@@ -20,6 +20,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
 - Applies a transparent manual-review gate that reports whether score, evidence quality, freshness, red-team risk, source checks, and optional order-preview requirements pass.
 - Evaluates fixed-stake paper baskets, including target hit rates, break-even winner multiples, known-cost coverage, open versus realized results, narrative-family concentration, and forward-test timestamp integrity.
+- Freezes owner-created paper signals from a phone issue, preserves the original timestamp and market-cap snapshot, and marks open signals hourly without custody or execution.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
 - Can read Solana wallet history through Helius and conservatively normalize complete swaps and priced transfers.
 - Persists wallet accounting snapshots and requires repeated positive, non-contaminated runs before labeling a wallet a repeatable realized-PnL candidate.
@@ -49,7 +50,19 @@ broad default or enter a theme such as `AI agents`, `stablecoin payments`, or
 labels a candidate when a term survives at least two independent domains and
 two positive research lenses.
 
-Editing the issue reruns the scan and updates the existing bot comment. Requests
+Choose **Start a paper signal** once you want to measure a token prospectively.
+The issue workflow freezes the issue time and first live market-cap snapshot,
+runs the full research and safety gate, and starts with a hypothetical $50 stake
+and 10x target by default. A separate hourly workflow updates the same bot
+comment and posts a new alert only when a sampled 2x, 3x, 5x, or selected target
+is first crossed. Closing the issue stops tracking. The highest value is only
+the highest scheduled sample; intrahour moves, fees, taxes, slippage, supply
+changes, and real fill constraints are not known.
+
+Editing a token-scan or discovery issue reruns that research and updates the
+existing bot comment. Paper-signal issues run only when opened, so an edit
+cannot rewrite the original entry. Workflow reruns recover the existing bot
+state instead of creating a later entry. Requests
 from accounts other than the repository owner are ignored so outsiders cannot
 consume the configured Tavily or Helius credits. Never place a private key or
 seed phrase in an issue. The phone report never signs or submits a transaction.
