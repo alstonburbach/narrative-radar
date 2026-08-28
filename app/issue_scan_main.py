@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from app.collectors.web_research import TavilyResearchProvider
+from app.collectors.web_research import build_default_research_provider
 from app.github_issue_scan import (
     render_issue_error,
     render_issue_report,
@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _research_provider_or_none() -> tuple[Any | None, str | None]:
     try:
-        return TavilyResearchProvider(), None
+        return build_default_research_provider(), None
     except RuntimeError as exc:
         return None, str(exc)
 

@@ -1,0 +1,39 @@
+name: Discover narratives
+description: Find recent cross-source crypto themes from your phone
+title: "[RADAR DISCOVERY] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search for a theme before you know a token contract.
+        Results are unverified research leads, never an automatic buy or trade.
+  - type: input
+    id: topic
+    attributes:
+      label: Topic or theme
+      description: Keep the broad default or narrow it to something such as AI agents, stablecoin payments, or Solana consumer apps
+      value: "crypto narratives"
+    validations:
+      required: true
+  - type: dropdown
+    id: chain
+    attributes:
+      label: Chain
+      description: Auto searches across chains
+      options:
+        - auto
+        - solana
+        - base
+        - ethereum
+        - bsc
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: limit
+    attributes:
+      label: Results per research lens
+      description: Use 1 to 10; five balances breadth and speed
+      value: "5"
+    validations:
+      required: true

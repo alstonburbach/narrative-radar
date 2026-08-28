@@ -10,6 +10,8 @@ load_dotenv()
 
 
 class TavilyResearchProvider(ResearchProvider):
+    provider_name = "tavily"
+
     def __init__(self, api_key=None):
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
@@ -43,3 +45,14 @@ class TavilyResearchProvider(ResearchProvider):
                 )
             )
         return results
+
+
+def build_default_research_provider(api_key=None, session=None) -> ResearchProvider:
+    """Prefer Tavily and fall back to bounded public RSS research without a key."""
+    resolved_key = api_key or os.getenv("TAVILY_API_KEY")
+    if resolved_key:
+        return TavilyResearchProvider(api_key=resolved_key)
+
+    from app.collectors.public_feed_research import PublicFeedResearchProvider
+
+    return PublicFeedResearchProvider(session=session)

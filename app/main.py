@@ -51,10 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _provider_or_none():
-    from app.collectors.web_research import TavilyResearchProvider
+    from app.collectors.web_research import build_default_research_provider
 
     try:
-        return TavilyResearchProvider(), None
+        return build_default_research_provider(), None
     except RuntimeError as exc:
         return None, str(exc)
 

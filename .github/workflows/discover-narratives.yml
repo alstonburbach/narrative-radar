@@ -1,5 +1,9 @@
 name: discover narratives
 
+permissions:
+  contents: read
+  issues: write
+
 on:
   schedule:
     - cron: "0 12 * * 1-5"
@@ -46,6 +50,11 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Discover narrative leads
         run: python -m app.discovery_main --topic "$TOPIC" --chain "$CHAIN" --limit "$LIMIT" --json > narrative-discovery.json
+      - name: Render phone report and notification decision
+        run: >-
+          python -m app.discovery_report_main narrative-discovery.json
+          --markdown-output narrative-discovery.md
+          --notification-output discovery-notification.json
       - name: Write job summary
         run: |
           python - <<'PY'
@@ -72,8 +81,60 @@ jobs:
                   handle.write(f"- Persisted signals: `{history.get('persisted_signals')}`\\n")
               handle.write("\\nResults are unverified leads; no trade signal or order is produced.\\n")
           PY
+      - name: Notify on a material narrative update
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const decision = JSON.parse(
+              fs.readFileSync('discovery-notification.json', 'utf8')
+            );
+            if (!decision.notify) {
+              core.info(`No alert: ${decision.reason}`);
+              return;
+            }
+            const title = '[RADAR FEED] Narrative discoveries';
+            const body = fs.readFileSync('narrative-discovery.md', 'utf8');
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+                per_page: 100,
+              }
+            );
+            const existing = issues.find(
+              (issue) => !issue.pull_request && issue.title === title
+            );
+            if (!existing) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+              return;
+            }
+            if (existing.state !== 'open') {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'open',
+              });
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              body,
+            });
       - name: Upload discovery report
         uses: actions/upload-artifact@v4
         with:
           name: narrative-radar-discovery
-          path: narrative-discovery.json
+          path: |
+            narrative-discovery.json
+            narrative-discovery.md
+            discovery-notification.json

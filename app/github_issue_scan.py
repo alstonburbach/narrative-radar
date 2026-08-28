@@ -53,7 +53,9 @@ def _validated_contract(value: str | None, chain: str) -> str:
     is_evm = bool(_EVM_ADDRESS.fullmatch(contract))
     is_solana = bool(_SOLANA_ADDRESS.fullmatch(contract))
     if not is_evm and not is_solana:
-        raise ValueError("Contract must be a valid EVM 0x address or Solana mint address.")
+        raise ValueError(
+            "Contract must be a valid EVM 0x address or Solana mint address."
+        )
     if chain == "solana" and not is_solana:
         raise ValueError("The Solana chain selection requires a Solana mint address.")
     if chain in {"base", "ethereum", "bsc"} and not is_evm:
@@ -64,13 +66,9 @@ def _validated_contract(value: str | None, chain: str) -> str:
 def parse_issue_scan_request(body: str) -> dict:
     """Parse the stable headings emitted by the GitHub issue form."""
     sections = _sections(body)
-    chain = (
-        _section_value(sections, "Chain") or "auto"
-    ).strip().lower()
+    chain = (_section_value(sections, "Chain") or "auto").strip().lower()
     if chain not in _SUPPORTED_CHAINS:
-        raise ValueError(
-            "Chain must be auto, solana, base, ethereum, or bsc."
-        )
+        raise ValueError("Chain must be auto, solana, base, ethereum, or bsc.")
     requested_chain = "unknown" if chain in {"auto", "unknown"} else chain
     contract = _validated_contract(
         _section_value(sections, "Contract address", "Token contract"),
@@ -129,11 +127,22 @@ def _money(value: Any) -> str:
 
 
 def _cell(value: Any) -> str:
-    return str(value if value is not None else "n/a").replace("|", "\\|").replace("\n", " ")
+    text = str(value if value is not None else "n/a")
+    text = (
+        text.replace("\n", " ")
+        .replace("@", "@\u200b")
+        .replace("`", "'")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    text = re.sub(r"([\\[\]])", r"\\\1", text)
+    return text.replace("|", "\\|")
 
 
 def _safe_url(value: Any) -> str | None:
     url = str(value or "").strip()
+    if any(character.isspace() or character in "()<>" for character in url):
+        return None
     parsed = urlparse(url)
     return url if parsed.scheme in {"http", "https"} and parsed.netloc else None
 
@@ -176,6 +185,8 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
         "",
         f"**Result: {_gate_label(gate.get('status'))}.** This is a research result, not an automatic buy signal.",
         "",
+        f"Research source: `{_cell(research.get('provider') or 'not configured')}`",
+        "",
         "| Check | Result |",
         "|---|---:|",
         f"| Chain / DEX | {_cell(market.get('chain'))} / {_cell(market.get('dex'))} |",
@@ -201,9 +212,7 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
     if dex_url:
         lines.extend(["", f"[Open live DEX chart]({dex_url})"])
 
-    requirement_map = {
-        item.get("name"): item for item in gate.get("requirements", [])
-    }
+    requirement_map = {item.get("name"): item for item in gate.get("requirements", [])}
     failed = list(gate.get("failed_requirements") or [])
     lines.extend(["", "### What still needs attention"])
     if failed:
@@ -266,6 +275,8 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
 
     if research.get("error"):
         lines.extend(["", f"Research note: {_cell(research.get('error'))}"])
+    for warning in list(research.get("provider_warnings") or [])[:5]:
+        lines.append(f"- Research source warning: {_cell(warning)}")
 
     lines.extend(
         [

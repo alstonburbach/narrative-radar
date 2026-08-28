@@ -127,6 +127,27 @@ def test_signal_clustering_rejects_social_only_or_counterevidence_only_terms():
     assert cluster_signal_terms(social_only) == []
     assert cluster_signal_terms(counter_only) == []
 
+
+def test_signal_clustering_requires_two_positive_research_lenses():
+    evidence = [
+        {
+            "claim": "AI agents adoption",
+            "quote": "AI agents handle crypto lending",
+            "source_url": "https://example.com/adoption",
+            "source_type": "secondary_lead",
+            "research_lens": "adoption_usage",
+        },
+        {
+            "claim": "AI agents warning",
+            "quote": "AI agents caused an unrelated security warning",
+            "source_url": "https://example.org/warning",
+            "source_type": "secondary_lead",
+            "research_lens": "counterevidence",
+        },
+    ]
+
+    assert cluster_signal_terms(evidence) == []
+
 def test_signal_clustering_does_not_treat_subdomains_as_independent_sources():
     evidence = [
         {

@@ -49,6 +49,14 @@ SECONDARY_DOMAINS = {
     "dlnews.com",
 }
 
+ALLOWED_SEARCH_SOURCE_TYPES = {
+    "primary_candidate",
+    "onchain_data",
+    "secondary_lead",
+    "social_lead",
+    "web_search",
+}
+
 
 def _get_value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
@@ -149,11 +157,19 @@ def results_to_evidence(
 
         matched_contract = bool(needle and needle in f"{title} {snippet}".lower())
         confidence = 0.60 if matched_contract else 0.35
+        declared_source_type = str(
+            _get_value(result, "source_type", "") or ""
+        ).strip()
+        source_type = (
+            declared_source_type
+            if declared_source_type in ALLOWED_SEARCH_SOURCE_TYPES
+            else classify_source(url)
+        )
         evidence.append(
             Evidence(
                 claim=f"Public search result references {identity}: {title or url}",
                 source_url=url,
-                source_type=classify_source(url),
+                source_type=source_type,
                 published_at=_get_value(result, "published_at"),
                 quote=snippet[:500] or None,
                 relevance=(
