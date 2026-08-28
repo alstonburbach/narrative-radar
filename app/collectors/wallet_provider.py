@@ -44,12 +44,19 @@ class HeliusWalletProvider(WalletProvider):
         if before_signature:
             params["before-signature"] = before_signature
 
-        response = requests.get(
-            self.BASE_URL.format(wallet_address=wallet_address.strip()),
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                self.BASE_URL.format(wallet_address=wallet_address.strip()),
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            response_status = getattr(getattr(exc, "response", None), "status_code", None)
+            status_note = f" with HTTP {response_status}" if response_status else ""
+            raise RuntimeError(
+                f"Helius wallet-history request failed{status_note}."
+            ) from None
         payload = response.json()
         if isinstance(payload, list):
             return payload

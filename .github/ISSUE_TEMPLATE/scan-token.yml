@@ -1,0 +1,47 @@
+name: Scan a token
+description: Run Narrative Radar from your phone with no trade execution
+title: "[RADAR SCAN] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Paste only a public token contract. Never paste a private key or seed phrase.
+        The result is research and a paper-only review plan; no order is placed.
+  - type: input
+    id: contract
+    attributes:
+      label: Contract address
+      description: EVM 0x contract or Solana mint address
+      placeholder: Paste the token contract here
+    validations:
+      required: true
+  - type: dropdown
+    id: chain
+    attributes:
+      label: Chain
+      description: Auto works when you are unsure
+      options:
+        - auto
+        - solana
+        - base
+        - ethereum
+        - bsc
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: paper_usd
+    attributes:
+      label: Paper position size USD
+      description: Hypothetical amount used for projections only
+      value: "50"
+    validations:
+      required: false
+  - type: input
+    id: order_preview_usd
+    attributes:
+      label: Manual review order size USD
+      description: Paper-only amount used for liquidity and freshness checks
+      value: "50"
+    validations:
+      required: false

@@ -138,3 +138,21 @@ def test_helius_adoption_provider_requires_a_key(monkeypatch):
 
     with pytest.raises(RuntimeError, match="HELIUS_API_KEY"):
         HeliusAdoptionProvider()
+
+
+def test_helius_adoption_provider_redacts_key_from_report_errors():
+    class FailingSession:
+        def post(self, url, json, headers, timeout):
+            raise RuntimeError(url)
+
+    provider = HeliusAdoptionProvider(
+        api_key="super-secret-key",
+        session=FailingSession(),
+    )
+
+    snapshot = provider.fetch_snapshot("MINT", chain="solana")
+    serialized_errors = " ".join(snapshot["errors"] + snapshot["warnings"])
+
+    assert snapshot["status"] == "failed"
+    assert "super-secret-key" not in serialized_errors
+    assert "[redacted]" in serialized_errors

@@ -33,6 +33,19 @@ python -m app.main --contract SOLANA_MINT --chain solana --json
 python -m app.paper_basket_main --input paper-basket.json --stake-usd 50 --target-multiple 10 --json
 ```
 
+## Use from a phone
+
+Open the repository's **Issues** tab, choose **New issue**, and select
+**Scan a token**. Paste one public contract address, choose the chain (or
+`auto`), and submit the issue. An owner-only GitHub workflow runs the full
+market, narrative, red-team, optional Solana activity, paper projection, and
+manual-review checks, then replies on the same issue with a compact report.
+
+Editing the issue reruns the scan and updates the existing bot comment. Requests
+from accounts other than the repository owner are ignored so outsiders cannot
+consume the configured Tavily or Helius credits. Never place a private key or
+seed phrase in an issue. The phone report never signs or submits a transaction.
+
 Without a Tavily key, the market, red-team, score, and paper stages still run; web research is marked as unavailable.
 
 The narrative report is intentionally skeptical: search results are leads, not proof. A high-quality result needs multiple independent domains, more than social discussion, and manual verification of primary sources. The counterevidence lens is included so a project is not judged only from promotional claims.
