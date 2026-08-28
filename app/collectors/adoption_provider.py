@@ -120,6 +120,11 @@ class HeliusAdoptionProvider(AdoptionProvider):
         self.session = session or requests
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
+    def _safe_error(self, exc: Exception) -> str:
+        """Remove the Helius credential before errors enter reports or artifacts."""
+        message = str(exc)
+        return message.replace(self.api_key, "[redacted]") if self.api_key else message
+
     def _rpc(self, method: str, params: list | dict) -> Any:
         response = self.session.post(
             f"{HELIUS_RPC_URL}?api-key={self.api_key}",
@@ -412,7 +417,7 @@ class HeliusAdoptionProvider(AdoptionProvider):
                 )
             successful_sections += 1
         except Exception as exc:
-            snapshot.errors.append(f"holder scan: {exc}")
+            snapshot.errors.append(f"holder scan: {self._safe_error(exc)}")
 
         try:
             snapshot.__dict__.update(self._fetch_supply(token_address))
@@ -429,7 +434,9 @@ class HeliusAdoptionProvider(AdoptionProvider):
                     snapshot.top_10_scanned_owner_share_pct = round(float(top_10 / supply * 100), 4)
             successful_sections += 1
         except Exception as exc:
-            snapshot.warnings.append(f"Token supply was unavailable: {exc}")
+            snapshot.warnings.append(
+                f"Token supply was unavailable: {self._safe_error(exc)}"
+            )
 
         try:
             activity = self._fetch_transfer_activity(
@@ -452,7 +459,9 @@ class HeliusAdoptionProvider(AdoptionProvider):
                 )
             successful_sections += 1
         except Exception as exc:
-            snapshot.errors.append(f"transfer activity scan: {exc}")
+            snapshot.errors.append(
+                f"transfer activity scan: {self._safe_error(exc)}"
+            )
 
         if successful_sections == 3:
             snapshot.status = "complete"

@@ -8,22 +8,23 @@ from app.agents.narrative_detective import (
 )
 from app.agents.narrative_quality import assess_narrative_quality
 from app.agents.red_team import run_red_team, summarize_red_team
+from app.collectors.adoption_provider import is_solana_chain
 from app.collectors.market import fetch_market_data
 from app.collectors.source_verifier import verify_source_leads
-from app.collectors.adoption_provider import is_solana_chain
 from app.database.db import (
-    get_onchain_activity_history,
     get_narrative_history,
+    get_onchain_activity_history,
     initialize_database,
-    save_onchain_activity_snapshot,
     save_evidence,
     save_market_snapshot,
     save_narrative_run,
+    save_onchain_activity_snapshot,
 )
+from app.execution.order_preview import build_order_preview
 from app.scoring.decision_gate import evaluate_manual_review_gate
 from app.scoring.narrative_score import score_radar
-from app.tracking.narrative_history import compare_narrative_history
 from app.tracking.adoption_history import compare_adoption_history
+from app.tracking.narrative_history import compare_narrative_history
 from app.tracking.paper_tracker import project_paper_position
 
 
@@ -33,6 +34,8 @@ def run_analysis(
     research_provider: Optional[Any] = None,
     research_limit: int = 5,
     paper_usd: Optional[float] = None,
+    order_preview_usd: Optional[float] = None,
+    order_side: str = "buy",
     persist: bool = True,
     adoption_provider: Optional[Any] = None,
     adoption_holder_limit: int = 2_000,
@@ -212,11 +215,21 @@ def run_analysis(
         **summarize_red_team(flags),
         "flags": flags,
     }
+    order_preview = (
+        build_order_preview(
+            market,
+            side=order_side,
+            amount_usd=order_preview_usd,
+        )
+        if order_preview_usd is not None
+        else None
+    )
     decision_gate = evaluate_manual_review_gate(
         market=market,
         score=score,
         narrative_quality=narrative_quality,
         red_team=red_team_report,
+        order_preview=order_preview,
     )
 
     report = {
@@ -231,6 +244,7 @@ def run_analysis(
         "decision_gate": decision_gate,
         "score": score,
         "paper": paper,
+        "order_preview": order_preview,
         "onchain_activity": onchain_activity,
         "disclaimer": "Research and paper-analysis output only. No orders are placed and no return is guaranteed.",
     }

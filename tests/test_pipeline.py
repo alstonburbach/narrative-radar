@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app.collectors.research_provider import ResearchResult
 from app.pipeline import run_analysis
 
@@ -30,6 +32,7 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
         "liquidity_usd": 50_000,
         "volume_24h": 200_000,
         "price_change_24h": 15,
+        "collected_at": datetime.now(timezone.utc).isoformat(),
     }
     monkeypatch.setattr("app.pipeline.fetch_market_data", lambda *args, **kwargs: dict(market))
     monkeypatch.setattr("app.pipeline.initialize_database", lambda: None)
@@ -43,11 +46,14 @@ def test_run_analysis_connects_market_research_and_paper(monkeypatch):
         chain="base",
         research_provider=FakeProvider(),
         paper_usd=100,
+        order_preview_usd=100,
     )
 
     assert report["status"] == "complete"
     assert "decision_gate" in report
     assert report["decision_gate"]["execution_enabled"] is False
+    assert report["decision_gate"]["order_preview_requested"] is True
+    assert report["order_preview"]["status"] == "ready_for_manual_review"
     assert report["snapshot_id"] == 7
     assert report["narrative_run_id"] == 8
     assert report["narrative_history"]["state"] == "no_history"

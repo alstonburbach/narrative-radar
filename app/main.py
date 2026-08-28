@@ -3,8 +3,6 @@ import json
 from typing import Optional
 
 from app.pipeline import run_analysis
-from app.execution.order_preview import build_order_preview
-from app.scoring.decision_gate import evaluate_manual_review_gate
 
 
 def create_research_job(contract_address: str, chain: str) -> dict:
@@ -205,28 +203,13 @@ def main(argv=None) -> int:
         research_provider=provider,
         research_limit=args.research_limit,
         paper_usd=args.paper_usd,
+        order_preview_usd=args.order_preview_usd,
+        order_side=args.order_side,
         persist=not args.no_persist,
         collect_onchain=not args.no_onchain,
     )
     if provider_error:
         report["research"]["error"] = provider_error
-
-    report["order_preview"] = (
-        build_order_preview(
-            report.get("market", {}),
-            side=args.order_side,
-            amount_usd=args.order_preview_usd,
-        )
-        if args.order_preview_usd is not None
-        else None
-    )
-    report["decision_gate"] = evaluate_manual_review_gate(
-        market=report.get("market", {}),
-        score=report.get("score", {}),
-        narrative_quality=report.get("narrative_quality", {}),
-        red_team=report.get("red_team", {}),
-        order_preview=report.get("order_preview"),
-    )
 
     if args.as_json:
         print(json.dumps(report, indent=2, sort_keys=True))
