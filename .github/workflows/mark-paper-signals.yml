@@ -1,0 +1,123 @@
+name: mark open paper signals
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: narrative-radar-paper-watch
+  cancel-in-progress: false
+
+jobs:
+  mark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Collect trusted open paper states
+        id: collect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stateMarker = '<!-- narrative-radar-paper-state:';
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                per_page: 100,
+              }
+            );
+            const candidates = issues
+              .filter(
+                (issue) =>
+                  !issue.pull_request &&
+                  issue.user?.login === context.repo.owner &&
+                  issue.title?.startsWith('[RADAR PAPER]')
+              )
+              .sort((left, right) => left.number - right.number)
+              .slice(0, 25);
+            const signals = [];
+            for (const issue of candidates) {
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  per_page: 100,
+                }
+              );
+              const stateComment = comments.find(
+                (comment) =>
+                  comment.user?.login === 'github-actions[bot]' &&
+                  comment.body?.includes(stateMarker)
+              );
+              if (stateComment) {
+                signals.push({
+                  issue_number: issue.number,
+                  comment_id: stateComment.id,
+                  body: stateComment.body,
+                });
+              }
+            }
+            fs.writeFileSync(
+              'paper-watch-input.json',
+              JSON.stringify({ signals }, null, 2)
+            );
+            core.setOutput('count', signals.length);
+      - name: Set up Python
+        if: ${{ steps.collect.outputs.count != '0' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        if: ${{ steps.collect.outputs.count != '0' }}
+        run: python -m pip install -r requirements.txt
+      - name: Sample current market caps
+        if: ${{ steps.collect.outputs.count != '0' }}
+        run: >-
+          python -m app.paper_watch_main
+          --input paper-watch-input.json
+          --output paper-watch.json
+      - name: Update trackers and post new milestones
+        if: ${{ steps.collect.outputs.count != '0' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(fs.readFileSync('paper-watch.json', 'utf8'));
+            for (const update of result.updates || []) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: update.comment_id,
+                body: update.body,
+              });
+              if (update.alert_body) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: update.issue_number,
+                  body: update.alert_body,
+                });
+              }
+            }
+            await core.summary
+              .addHeading('Narrative Radar paper watch')
+              .addRaw(`Updated: ${(result.updates || []).length}<br>Errors: ${(result.errors || []).length}<br>Execution enabled: ${result.execution_enabled}`)
+              .write();
+      - name: Upload sampled watch result
+        if: ${{ steps.collect.outputs.count != '0' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-paper-watch-${{ github.run_id }}
+          path: paper-watch.json
+          retention-days: 7

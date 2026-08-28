@@ -1,0 +1,111 @@
+name: start paper signal from phone
+
+on:
+  issues:
+    types:
+      - opened
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: narrative-radar-paper-start-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[RADAR PAPER]')
+    runs-on: ubuntu-latest
+    env:
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore radar history
+        uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-paper-db-${{ github.run_id }}
+          restore-keys: narrative-radar-paper-db-
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Preserve an existing forward entry on workflow reruns
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stateMarker = '<!-- narrative-radar-paper-state:';
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              }
+            );
+            const existing = comments.find(
+              (comment) =>
+                comment.user?.login === 'github-actions[bot]' &&
+                comment.body?.includes(stateMarker)
+            );
+            fs.writeFileSync('existing-paper-comment.md', existing?.body || '');
+      - name: Record the owner-requested paper entry
+        continue-on-error: true
+        run: >-
+          python -m app.issue_paper_main
+          --event "$GITHUB_EVENT_PATH"
+          --existing-comment existing-paper-comment.md
+          --json-output paper-signal.json
+          --markdown-output paper-signal.md
+      - name: Reply with the paper tracker
+        if: ${{ always() && hashFiles('paper-signal.md') != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportMarker = '<!-- narrative-radar-paper-report -->';
+            const body = fs.readFileSync('paper-signal.md', 'utf8');
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              }
+            );
+            const existing = comments.find(
+              (comment) =>
+                comment.user?.login === 'github-actions[bot]' &&
+                comment.body?.includes(reportMarker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+      - name: Upload the frozen entry analysis
+        if: ${{ always() && hashFiles('paper-signal.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-paper-entry-${{ github.event.issue.number }}
+          path: paper-signal.json

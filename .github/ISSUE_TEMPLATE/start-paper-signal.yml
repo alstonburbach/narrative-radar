@@ -1,0 +1,66 @@
+name: Start a paper signal
+description: Freeze a $50-style entry and track later sampled market caps
+title: "[RADAR PAPER] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This records a forward-time paper entry and checks it later. No money moves.
+        Paste only a public token contract. Never paste a private key or seed phrase.
+        Closing the issue stops scheduled tracking; editing cannot reset the original entry.
+  - type: input
+    id: contract
+    attributes:
+      label: Contract address
+      description: EVM 0x contract or Solana mint address
+      placeholder: Paste the token contract here
+    validations:
+      required: true
+  - type: dropdown
+    id: chain
+    attributes:
+      label: Chain
+      description: Auto works when you are unsure
+      options:
+        - auto
+        - solana
+        - base
+        - ethereum
+        - bsc
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: stake
+    attributes:
+      label: Paper stake USD
+      description: Hypothetical amount only; no order is created
+      value: "50"
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target multiple
+      description: Sampled target relative to the frozen entry market cap
+      value: "10"
+    validations:
+      required: true
+  - type: input
+    id: narrative
+    attributes:
+      label: Narrative family
+      description: Short theme such as AI agents, payments, gaming, or infrastructure
+      placeholder: Describe the narrative in a few words
+    validations:
+      required: false
+  - type: dropdown
+    id: source
+    attributes:
+      label: Signal source
+      options:
+        - Narrative Radar
+        - Manual research
+      default: 0
+    validations:
+      required: true
