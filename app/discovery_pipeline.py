@@ -8,6 +8,7 @@ from app.database.db import (
     initialize_database,
     save_discovery_run,
 )
+from app.narrative_watchlist import build_narrative_options
 from app.tracking.discovery_history import compare_discovery_history
 
 
@@ -41,4 +42,7 @@ def run_discovery(
             "state": "not_persisted" if not persist else "not_available",
             "run_count": 0,
         }
+    report["narrative_options"] = build_narrative_options(report)
+    report["possible_buy_review_status"] = "blocked_pending_token_checks"
+    report["execution_enabled"] = False
     return report

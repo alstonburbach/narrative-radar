@@ -16,6 +16,20 @@ POSITIVE_DISCOVERY_LENSES = {
     "onchain_tokenomics",
 }
 
+SINGLE_TERM_NARRATIVES = {
+    "depin",
+    "gaming",
+    "memecoin",
+    "memecoins",
+    "payments",
+    "privacy",
+    "restaking",
+    "rwa",
+    "stablecoin",
+    "stablecoins",
+    "tokenization",
+}
+
 
 DISCOVERY_LENSES = {
     "official_builders": "official docs github builders developers release update upgrade",
@@ -142,6 +156,11 @@ STOP_WORDS = {
     "will",
     "would",
     "web3",
+    "solana",
+    "ethereum",
+    "bitcoin",
+    "base",
+    "bsc",
     "with",
     "your",
     "public",
@@ -233,6 +252,8 @@ def cluster_signal_terms(
 
     candidates = []
     for label, signal in signals.items():
+        if " " not in label and label not in SINGLE_TERM_NARRATIVES:
+            continue
         if len(signal["domains"]) < min_domains or len(signal["lenses"]) < min_lenses:
             continue
         if len(signal["lenses"] & POSITIVE_DISCOVERY_LENSES) < 2:

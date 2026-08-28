@@ -58,6 +58,7 @@ def evaluate_manual_review_gate(
     score: Optional[Mapping[str, Any]],
     narrative_quality: Optional[Mapping[str, Any]],
     red_team: Optional[Mapping[str, Any]],
+    token_security: Optional[Mapping[str, Any]] = None,
     order_preview: Optional[Mapping[str, Any]] = None,
     *,
     min_radar_score: float = 50.0,
@@ -87,6 +88,7 @@ def evaluate_manual_review_gate(
     score = score or {}
     narrative_quality = narrative_quality or {}
     red_team = red_team or {}
+    token_security = token_security or {}
     requirements = []
 
     market_found = bool(market.get("found"))
@@ -253,6 +255,50 @@ def evaluate_manual_review_gate(
             )
         )
 
+    security_status = str(token_security.get("status") or "missing")
+    security_blockers = list(token_security.get("hard_blockers") or [])
+    security_passes = (
+        security_status == "complete"
+        and token_security.get("promotion_eligible") is True
+        and not security_blockers
+        and token_security.get("execution_enabled") is False
+    )
+    requirements.append(
+        _requirement(
+            "token_security",
+            security_passes,
+            (
+                "Contract security, trading restrictions, holder concentration, and available LP ownership checks passed."
+                if security_passes
+                else (
+                    f"Token security status is {security_status}; blockers: "
+                    + (", ".join(str(value) for value in security_blockers) or "unknown")
+                    + "."
+                )
+            ),
+            blocking=True,
+        )
+    )
+
+    bundler = token_security.get("bundler_analysis") or {}
+    bundler_status = str(bundler.get("status") or "not_available")
+    bundler_blockers = list(bundler.get("hard_blockers") or [])
+    bundler_passes = bundler_status == "complete" and not bundler_blockers
+    requirements.append(
+        _requirement(
+            "bundler_concentration",
+            bundler_passes,
+            (
+                "Linked-wallet and same-block bundle concentration checks completed without blockers."
+                if bundler_passes
+                else (
+                    "Linked-wallet or same-block bundle analysis is incomplete; "
+                    "manual bundle review is required."
+                )
+            ),
+        )
+    )
+
     fetch_failures = _number(narrative_quality.get("fetch_failures")) or 0
     requirements.append(
         _requirement(
@@ -362,6 +408,10 @@ def evaluate_manual_review_gate(
         notices.append("Counterevidence must be resolved by the reviewer.")
     if fetch_failures:
         notices.append("Some source pages could not be checked.")
+    if not bundler_passes:
+        notices.append(
+            "Bundler and linked-wallet concentration must be checked manually before any possible-buy review."
+        )
     if review_requirements:
         notices.append(
             "One or more non-blocking research requirements still need review."

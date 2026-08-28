@@ -134,6 +134,15 @@ def _print_human(report: dict, provider_error: Optional[str] = None):
     print(f"Risk level: {report['red_team']['risk_level']}")
     decision_gate = report.get("decision_gate") or {}
     print(f"Decision gate: {decision_gate.get('status', 'not_evaluated')}")
+    security = report.get("token_security") or {}
+    print(
+        "Token security: "
+        f"{security.get('status', 'not_available')} / "
+        f"{security.get('risk_level', 'unknown')} / "
+        f"blockers={len(security.get('hard_blockers') or [])}"
+    )
+    bundler = security.get("bundler_analysis") or {}
+    print(f"Bundler/link analysis: {bundler.get('status', 'not_available')}")
     gate_requirements = {
         item.get("name"): item
         for item in decision_gate.get("requirements", [])

@@ -47,11 +47,29 @@ class TavilyResearchProvider(ResearchProvider):
         return results
 
 
-def build_default_research_provider(api_key=None, session=None) -> ResearchProvider:
-    """Prefer Tavily and fall back to bounded public RSS research without a key."""
+def build_default_research_provider(
+    api_key=None,
+    session=None,
+    preferred: str | None = None,
+) -> ResearchProvider:
+    """Choose Tavily or bounded public RSS with an explicit spend-aware mode."""
+    mode = str(
+        preferred or os.getenv("NARRATIVE_RESEARCH_PROVIDER") or "auto"
+    ).strip().lower()
+    if mode not in {"auto", "tavily", "public_rss"}:
+        raise ValueError(
+            "NARRATIVE_RESEARCH_PROVIDER must be auto, tavily, or public_rss."
+        )
+    if mode == "public_rss":
+        from app.collectors.public_feed_research import PublicFeedResearchProvider
+
+        return PublicFeedResearchProvider(session=session)
+
     resolved_key = api_key or os.getenv("TAVILY_API_KEY")
     if resolved_key:
         return TavilyResearchProvider(api_key=resolved_key)
+    if mode == "tavily":
+        raise RuntimeError("TAVILY_API_KEY is required for Tavily research mode.")
 
     from app.collectors.public_feed_research import PublicFeedResearchProvider
 

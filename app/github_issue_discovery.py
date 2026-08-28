@@ -124,6 +124,7 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
     freshness = quality.get("freshness") or {}
     history = report.get("discovery_history") or {}
     candidates = list(report.get("candidate_signals") or [])
+    options = list(report.get("narrative_options") or [])
     provider = report.get("research_provider") or "unknown"
     lines = [
         "<!-- narrative-radar-discovery-report -->",
@@ -141,6 +142,7 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
         f"| Fresh evidence | {_cell(freshness.get('recent_count'))} |",
         f"| Research leads | {_cell(report.get('lead_count'))} |",
         f"| Cross-source candidates | {len(candidates)} |",
+        f"| Researched watch options | {len(options)} |",
         f"| Scan durability | {_cell(history.get('state'))} across {_cell(history.get('run_count'))} run(s) |",
     ]
     if provider == "public_rss":
@@ -148,6 +150,47 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
             [
                 "",
                 "The free fallback checks recent public crypto-news and official ecosystem feeds. Headlines remain unverified until their underlying claims are checked.",
+            ]
+        )
+
+    if options:
+        lines.extend(["", "### Automatic narrative watch options"])
+        for option in options[:5]:
+            status = str(option.get("status") or "insufficient_evidence").replace(
+                "_", " "
+            )
+            lines.extend(
+                [
+                    f"{_cell(option.get('rank'))}. **{_cell(option.get('label'))}** — `{_cell(status)}`",
+                    (
+                        "   - Research basis: "
+                        f"{_cell(len(option.get('independent_domains') or []))} domains, "
+                        f"{_cell(len(option.get('positive_lenses') or []))} positive lenses, "
+                        f"{_cell(option.get('recent_evidence_count'))} recent dated source(s)"
+                    ),
+                    (
+                        "   - Scores: cross-source "
+                        f"`{_cell(option.get('signal_score'))}/100`; option evidence "
+                        f"`{_cell(option.get('evidence_quality_score'))}/100`"
+                    ),
+                    "   - Buy review: **blocked until an exact token contract passes security, liquidity, holder/LP, bundler, and counterevidence checks.**",
+                ]
+            )
+            for caution in list(option.get("cautions") or [])[:3]:
+                lines.append(f"   - Caution: {_cell(caution)}")
+            links = []
+            for value in option.get("evidence_urls") or []:
+                url = _safe_url(value)
+                if not url:
+                    continue
+                domain = (urlparse(url).hostname or "source").removeprefix("www.")
+                links.append(f"[{_cell(domain)}]({url})")
+            if links:
+                lines.append(f"   - Evidence: {' · '.join(links[:5])}")
+        lines.extend(
+            [
+                "",
+                "**Next path:** identify the exact public contract → run **Scan a token** → resolve every contract-security and bundler warning → paper-track before considering real funds.",
             ]
         )
 
@@ -212,10 +255,16 @@ def discovery_notification_state(report: Mapping[str, Any]) -> dict:
     candidates = list(report.get("candidate_signals") or [])
     freshness = (report.get("quality") or {}).get("freshness") or {}
     history = report.get("discovery_history") or {}
+    options = list(report.get("narrative_options") or [])
     if report.get("status") not in {"complete", "partial"}:
         return {"notify": False, "reason": "discovery_failed"}
     if not candidates:
         return {"notify": False, "reason": "no_cross_source_candidates"}
+    if options and not any(
+        option.get("status") in {"research_next", "watch_for_confirmation"}
+        for option in options
+    ):
+        return {"notify": False, "reason": "no_researched_watch_options"}
     if not freshness.get("recent_count"):
         return {"notify": False, "reason": "no_recent_evidence"}
     if int(history.get("run_count") or 0) <= 1:
