@@ -38,6 +38,11 @@ def test_discovery_history_tracks_persisted_and_new_signals():
     assert result["persisted_signals"] == ["stablecoin rails"]
     assert result["new_signals"] == ["new users"]
     assert result["dropped_signals"] == ["payments"]
+    assert result["new_since_previous"] == ["new users"]
+    assert result["dropped_since_previous"] == ["payments"]
+    assert result["persisted_since_previous"] == ["stablecoin rails"]
+    assert result["quality_score_since_previous"]["delta"] == 12.0
+    assert result["independent_domain_count_since_previous"]["delta"] == 1.0
     assert result["recurring_signals"] == ["stablecoin rails"]
     assert result["recurring_signal_counts"]["stablecoin rails"] == 2
 

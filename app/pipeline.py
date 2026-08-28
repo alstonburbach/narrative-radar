@@ -65,6 +65,12 @@ def run_analysis(
     evidence = []
     research = {
         "status": "not_configured" if research_provider is None else "pending",
+        "provider": (
+            getattr(research_provider, "provider_name", None)
+            if research_provider is not None
+            else None
+        ),
+        "provider_warnings": [],
         "query": None,
         "result_count": 0,
         "error": None,
@@ -101,6 +107,9 @@ def run_analysis(
             ],
         )
         research["verification"] = verification
+        research["provider_warnings"] = list(
+            getattr(research_provider, "warnings", []) or []
+        )
         if persist:
             for item in evidence:
                 save_evidence(contract_address, item)

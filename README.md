@@ -7,12 +7,14 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Pulls the strongest-liquidity DEX Screener pair for a contract.
 - Stores market snapshots and research evidence in SQLite.
 - Searches public web results through Tavily when `TAVILY_API_KEY` is configured.
+- Falls back to bounded recent public RSS feeds from crypto publishers and official Solana/Ethereum sources when Tavily is not configured; feed headlines remain unverified leads.
 - Separates search leads from manually verified primary-source evidence and reports whether dated evidence is recent, stale, future-dated, or unavailable.
 - Searches separate lenses for builders, adoption, funding, token structure, and counterevidence, then measures source independence and corroboration after collapsing highly similar syndicated excerpts.
 - Fetches selected primary/on-chain/secondary leads and checks whether the project identity appears in the underlying page, while keeping that content match separate from official verification.
 - Persists compact evidence snapshots and reports whether a narrative is strengthening, weakening, or still too new to judge across repeated runs.
 - On Solana, optionally records holder counts, token-account scan coverage, token supply, and bounded finalized transfer activity as separate on-chain activity proxies.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
+- Runs narrative discovery from an owner-only phone issue form and posts material scheduled discoveries to one GitHub feed issue.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
@@ -41,12 +43,21 @@ Open the repository's **Issues** tab, choose **New issue**, and select
 market, narrative, red-team, optional Solana activity, paper projection, and
 manual-review checks, then replies on the same issue with a compact report.
 
+Choose **Discover narratives** when you do not know a contract yet. Keep the
+broad default or enter a theme such as `AI agents`, `stablecoin payments`, or
+`Solana consumer apps`. The phone report shows recent evidence links and only
+labels a candidate when a term survives at least two independent domains and
+two positive research lenses.
+
 Editing the issue reruns the scan and updates the existing bot comment. Requests
 from accounts other than the repository owner are ignored so outsiders cannot
 consume the configured Tavily or Helius credits. Never place a private key or
 seed phrase in an issue. The phone report never signs or submits a transaction.
 
-Without a Tavily key, the market, red-team, score, and paper stages still run; web research is marked as unavailable.
+Without a Tavily key, Narrative Radar uses the free public-feed fallback. It
+checks only recent feed items, skips slow or failed sources, reports source
+failures, and never upgrades a headline to verified evidence. Tavily remains
+the broader search provider when its repository secret is configured.
 
 The narrative report is intentionally skeptical: search results are leads, not proof. A high-quality result needs multiple independent domains, more than social discussion, and manual verification of primary sources. The counterevidence lens is included so a project is not judged only from promotional claims.
 
@@ -56,7 +67,12 @@ When `HELIUS_API_KEY` is configured, Solana token analyses also collect a bounde
 
 The Solana snapshot also reports scanned supply coverage and largest/top-10 scanned-owner shares. These are concentration and scan-coverage diagnostics—not a claim that the owners are humans—and concentration is marked as a lower bound when the holder scan is incomplete.
 
-The `discover narratives` GitHub workflow runs manually and on weekdays at 12:00 UTC. It caches compact discovery history so recurring candidate signals can be reviewed for persistence. Set `TAVILY_API_KEY` for live web research; set `HELIUS_API_KEY` for Solana on-chain activity collection.
+The `discover narratives` GitHub workflow runs manually and on weekdays at
+12:00 UTC. It caches compact discovery history and opens or comments on one
+`[RADAR FEED]` issue only when fresh cross-source candidates first appear,
+change, or materially strengthen. Unchanged or weak scans do not notify. Set
+`TAVILY_API_KEY` for broader live web research; set `HELIUS_API_KEY` for Solana
+on-chain activity collection.
 
 To analyze a Solana wallet, add `HELIUS_API_KEY` and run `python -m app.wallet_main WALLET_ADDRESS`. SOL-quoted PnL is reported in SOL unless a historical quote-price resolver is added; it is never converted using today’s price.
 

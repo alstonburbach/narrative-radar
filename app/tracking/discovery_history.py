@@ -58,8 +58,10 @@ def compare_discovery_history(history: Iterable[Mapping[str, Any]]) -> dict:
         }
 
     first = items[0]
+    previous = items[-2]
     last = items[-1]
     first_labels = _labels(first)
+    previous_labels = _labels(previous)
     last_labels = _labels(last)
     signal_run_counts = Counter(
         label
@@ -75,9 +77,19 @@ def compare_discovery_history(history: Iterable[Mapping[str, Any]]) -> dict:
     persisted = sorted(first_labels & last_labels)
     new_labels = sorted(last_labels - first_labels)
     dropped_labels = sorted(first_labels - last_labels)
+    persisted_since_previous = sorted(previous_labels & last_labels)
+    new_since_previous = sorted(last_labels - previous_labels)
+    dropped_since_previous = sorted(previous_labels - last_labels)
     quality = _delta(first, last, "quality_score")
     domains = _delta(first, last, "independent_domain_count")
     lead_count = _delta(first, last, "lead_count")
+    quality_since_previous = _delta(previous, last, "quality_score")
+    domains_since_previous = _delta(
+        previous,
+        last,
+        "independent_domain_count",
+    )
+    lead_count_since_previous = _delta(previous, last, "lead_count")
 
     if persisted and (
         (quality["available"] and quality["delta"] >= 10)
@@ -97,9 +109,13 @@ def compare_discovery_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "run_count": len(items),
         "first_scan_at": first.get("started_at"),
         "last_scan_at": last.get("started_at"),
+        "previous_scan_at": previous.get("started_at"),
         "quality_score": quality,
         "independent_domain_count": domains,
         "lead_count": lead_count,
+        "quality_score_since_previous": quality_since_previous,
+        "independent_domain_count_since_previous": domains_since_previous,
+        "lead_count_since_previous": lead_count_since_previous,
         "persisted_signal_count": len(persisted),
         "persisted_signals": persisted,
         "recurring_signal_counts": dict(sorted(signal_run_counts.items())),
@@ -107,6 +123,9 @@ def compare_discovery_history(history: Iterable[Mapping[str, Any]]) -> dict:
         "recurring_signals": recurring_signals,
         "new_signals": new_labels,
         "dropped_signals": dropped_labels,
+        "persisted_since_previous": persisted_since_previous,
+        "new_since_previous": new_since_previous,
+        "dropped_since_previous": dropped_since_previous,
         "note": (
             "Signal persistence is a research filter, not proof of adoption, product usage, "
             "or future returns. Re-check the underlying sources and counterevidence."
