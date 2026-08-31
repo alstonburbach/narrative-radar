@@ -41,7 +41,7 @@ jobs:
     env:
       TOPIC: ${{ inputs.topic || 'crypto narratives' }}
       CHAIN: ${{ inputs.chain || 'unknown' }}
-      LIMIT: ${{ inputs.limit || '5' }}
+      LIMIT: ${{ inputs.limit || '10' }}
       NARRATIVE_RESEARCH_PROVIDER: ${{ inputs.provider || (github.event.schedule == '43 13 * * *' && 'auto' || 'public_rss') }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
     steps:
@@ -78,6 +78,9 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write(f"## Narrative discovery: {report.get('topic')}\\n")
               handle.write(f"- Status: `{report.get('status')}`\\n")
+              handle.write(f"- Research provider: requested=`{report.get('research_provider_requested')}`, active=`{report.get('research_provider')}`, deep web scan=`{report.get('deep_research_active')}`\\n")
+              if report.get("provider_fallback_reason"):
+                  handle.write(f"- Provider fallback: `{report.get('provider_fallback_reason')}`\\n")
               handle.write(f"- Evidence quality: `{quality.get('quality_score')}/100` ({quality.get('classification')})\\n")
               handle.write(f"- Independent domains: `{report.get('independent_domain_count')}`\\n")
               handle.write(f"- Syndicated copies excluded: `{quality.get('syndication', {}).get('collapsed_source_count', 0)}` across `{quality.get('syndication', {}).get('cluster_count', 0)}` clusters\\n")
