@@ -102,10 +102,11 @@ def build_narrative_options(
         durable = normalized_label in recurring or normalized_label in persisted
 
         evidence_blockers = []
+        confirmation_gaps = []
         if len(domains) < 2:
             evidence_blockers.append("fewer_than_two_independent_domains")
         if len(positive_lenses) < 2:
-            evidence_blockers.append("fewer_than_two_positive_research_lenses")
+            confirmation_gaps.append("fewer_than_two_positive_research_lenses")
         if not recent:
             evidence_blockers.append("no_recent_dated_evidence")
         if not counterevidence_searched:
@@ -119,6 +120,7 @@ def build_narrative_options(
             signal_score >= 70
             and quality_score >= 40
             and len(domains) >= 3
+            and len(positive_lenses) >= 2
             and strong_source
             and counterevidence_leads == 0
         ):
@@ -135,6 +137,10 @@ def build_narrative_options(
             )
         if not durable:
             cautions.append("The theme has not yet persisted across repeated scans.")
+        if confirmation_gaps:
+            cautions.append(
+                "The theme needs confirmation from another positive research lens."
+            )
 
         options.append(
             {
@@ -151,6 +157,7 @@ def build_narrative_options(
                 "strong_source_present": strong_source,
                 "durable_across_scans": durable,
                 "evidence_blockers": evidence_blockers,
+                "confirmation_gaps": confirmation_gaps,
                 "cautions": cautions,
                 "evidence_urls": sorted(urls)[:5],
                 "possible_buy_review_status": "blocked_pending_token_checks",

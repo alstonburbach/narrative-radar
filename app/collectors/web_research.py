@@ -16,6 +16,10 @@ class TavilyResearchProvider(ResearchProvider):
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
             raise RuntimeError("TAVILY_API_KEY is missing. Check your .env file.")
+        self.requested_provider = "tavily"
+        self.deep_research_active = True
+        self.fallback_reason = None
+        self.warnings = []
 
     def search(self, query: str, limit: int = 10) -> list[ResearchResult]:
         if not query or not query.strip():
@@ -63,14 +67,25 @@ def build_default_research_provider(
     if mode == "public_rss":
         from app.collectors.public_feed_research import PublicFeedResearchProvider
 
-        return PublicFeedResearchProvider(session=session)
+        provider = PublicFeedResearchProvider(session=session)
+        provider.requested_provider = "public_rss"
+        return provider
 
     resolved_key = api_key or os.getenv("TAVILY_API_KEY")
     if resolved_key:
-        return TavilyResearchProvider(api_key=resolved_key)
+        provider = TavilyResearchProvider(api_key=resolved_key)
+        provider.requested_provider = mode
+        return provider
     if mode == "tavily":
         raise RuntimeError("TAVILY_API_KEY is required for Tavily research mode.")
 
     from app.collectors.public_feed_research import PublicFeedResearchProvider
 
-    return PublicFeedResearchProvider(session=session)
+    provider = PublicFeedResearchProvider(session=session)
+    provider.requested_provider = "auto"
+    provider.fallback_reason = "tavily_key_missing"
+    provider.warnings.append(
+        "Deep Tavily research was requested in auto mode, but TAVILY_API_KEY "
+        "is not configured; this run used public RSS only."
+    )
+    return provider

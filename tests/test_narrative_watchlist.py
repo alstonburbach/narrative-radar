@@ -105,6 +105,40 @@ def test_watchlist_ranks_researched_theme_but_blocks_buy_review():
     assert "Scan a token" in markdown
 
 
+def test_cross_source_same_lens_theme_becomes_confirmation_watch_not_buy_review():
+    report = _report()
+    report["evidence"] = report["evidence"][:2]
+    for item in report["evidence"]:
+        item["research_lens"] = "adoption_usage"
+        item["source_type"] = "secondary_lead"
+    report["candidate_signals"] = [
+        {
+            "label": "stablecoins",
+            "signal_score": 50,
+            "independent_domains": ["official.example", "news.example"],
+            "positive_lenses": ["adoption_usage"],
+            "evidence_urls": [item["source_url"] for item in report["evidence"]],
+            "research_strength": "cross_source_watch",
+        }
+    ]
+    report["discovery_history"] = {
+        "state": "insufficient_history",
+        "run_count": 1,
+    }
+
+    report["narrative_options"] = build_narrative_options(report)
+    option = report["narrative_options"][0]
+
+    assert option["status"] == "watch_for_confirmation"
+    assert option["confirmation_gaps"] == [
+        "fewer_than_two_positive_research_lenses"
+    ]
+    assert option["possible_buy_review_status"] == "blocked_pending_token_checks"
+    assert discovery_notification_state(report)["reason"] == (
+        "first_cross_source_candidates"
+    )
+
+
 def test_missing_freshness_withholds_researched_watch_option_notification():
     report = _report()
     for item in report["evidence"]:

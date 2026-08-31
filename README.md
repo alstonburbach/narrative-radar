@@ -16,7 +16,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Runs narrative discovery from an owner-only phone issue form and posts material scheduled discoveries to one GitHub feed issue.
 - Scans free public feeds every four hours and runs one deeper Tavily-backed web scan daily when its key is configured, while notifying only on material evidence-backed changes.
-- Ranks cross-source narrative watch options as `research_next`, `watch_for_confirmation`, or `insufficient_evidence`; every option remains blocked from possible-buy review until an exact contract passes token checks.
+- Normalizes common narrative aliases (for example, stablecoin/digital-dollar and meme-coin/memecoin wording), rejects unsafe prefix matches such as `inside`/`insider`, and ranks cross-source watch options as `research_next`, `watch_for_confirmation`, or `insufficient_evidence`; every option remains blocked from possible-buy review until an exact contract passes token checks.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
@@ -74,6 +74,9 @@ Without a Tavily key, Narrative Radar uses the free public-feed fallback. It
 checks only recent feed items, skips slow or failed sources, reports source
 failures, and never upgrades a headline to verified evidence. Tavily remains
 the broader search provider when its repository secret is configured.
+When the daily `auto` scan cannot find that secret, the report now states that
+the deep web scan is inactive instead of silently presenting RSS as the
+requested provider.
 
 The narrative report is intentionally skeptical: search results are leads, not proof. A high-quality result needs multiple independent domains, more than social discussion, and manual verification of primary sources. The counterevidence lens is included so a project is not judged only from promotional claims.
 
@@ -83,8 +86,9 @@ When `HELIUS_API_KEY` is configured, Solana token analyses also collect a bounde
 
 The Solana snapshot also reports scanned supply coverage and largest/top-10 scanned-owner shares. These are concentration and scan-coverage diagnostics—not a claim that the owners are humans—and concentration is marked as a lower bound when the holder scan is incomplete.
 
-The `discover narratives` GitHub workflow checks free public feeds every four
-hours and performs one deeper `auto` scan daily at 13:43 UTC (Tavily when its
+The `discover narratives` GitHub workflow checks up to ten results per lens
+from free public feeds every four hours and performs one deeper `auto` scan
+daily at 13:43 UTC (Tavily when its
 key exists, otherwise the public-feed fallback). It can also run manually. It
 caches compact discovery history and opens or comments on one
 `[RADAR FEED]` issue only when fresh cross-source candidates first appear,

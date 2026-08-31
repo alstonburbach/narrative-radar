@@ -126,6 +126,8 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
     candidates = list(report.get("candidate_signals") or [])
     options = list(report.get("narrative_options") or [])
     provider = report.get("research_provider") or "unknown"
+    requested_provider = report.get("research_provider_requested") or provider
+    deep_research_active = bool(report.get("deep_research_active"))
     lines = [
         "<!-- narrative-radar-discovery-report -->",
         f"## Narrative Radar discovery: {_cell(report.get('topic'))}",
@@ -133,6 +135,7 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
         "**Research leads only—not automatic buy signals.**",
         "",
         f"Research source: `{_cell(provider)}`",
+        f"Requested mode: `{_cell(requested_provider)}`; deep web scan active: `{_cell(deep_research_active)}`",
         "",
         "| Check | Result |",
         "|---|---:|",
@@ -197,7 +200,7 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
     lines.extend(["", "### Candidate themes"])
     if not candidates:
         lines.append(
-            "- No term repeated across at least two independent domains and two positive research lenses."
+            "- No supported theme repeated across at least two independent domains."
         )
     for index, candidate in enumerate(candidates[:8], start=1):
         domains = list(candidate.get("independent_domains") or [])

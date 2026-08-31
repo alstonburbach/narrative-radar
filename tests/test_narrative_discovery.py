@@ -9,6 +9,7 @@ from app.agents.narrative_discovery import (
 def test_discovery_queries_keep_research_lenses_separate():
     queries = build_discovery_queries(topic="stablecoin rails", chain="base")
 
+    assert next(iter(queries)) == "counterevidence"
     assert set(queries) == {
         "official_builders",
         "adoption_usage",
@@ -67,6 +68,33 @@ def test_signal_clustering_requires_multiple_domains_and_lenses():
         "solscan.io",
     ]
     assert len(stablecoin_rails["lenses"]) == 3
+
+
+def test_canonical_theme_aliases_create_a_cross_source_confirmation_watch():
+    evidence = [
+        {
+            "claim": "Stablecoin payment adoption grows",
+            "quote": "Stablecoins are being used for merchant settlement.",
+            "source_url": "https://one.example/stablecoin-payments",
+            "source_type": "secondary_lead",
+            "research_lens": "adoption_usage",
+        },
+        {
+            "claim": "Digital dollars challenge legacy rails",
+            "quote": "Digital dollar infrastructure is moving cross-border payments.",
+            "source_url": "https://two.example/digital-dollars",
+            "source_type": "secondary_lead",
+            "research_lens": "adoption_usage",
+        },
+    ]
+
+    signals = cluster_signal_terms(evidence)
+    stablecoins = next(signal for signal in signals if signal["label"] == "stablecoins")
+
+    assert stablecoins["research_strength"] == "cross_source_watch"
+    assert stablecoins["canonical_theme"] is True
+    assert stablecoins["positive_lenses"] == ["adoption_usage"]
+    assert stablecoins["positive_domains"] == ["one.example", "two.example"]
 
 
 def test_discovery_deduplicates_urls_and_reports_failed_lens():

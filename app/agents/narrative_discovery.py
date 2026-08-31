@@ -1,9 +1,10 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+import re
 from typing import Any, Iterable, List, Optional
+
 from app.research_domains import source_domain_family
 from app.research_independence import collapse_syndicated_evidence
-import re
 
 from app.agents.narrative_detective import results_to_evidence
 from app.agents.narrative_quality import assess_narrative_quality
@@ -30,13 +31,53 @@ SINGLE_TERM_NARRATIVES = {
     "tokenization",
 }
 
+CANONICAL_NARRATIVE_PATTERNS = {
+    "ai agents": (
+        r"\bai agents?\b",
+        r"\bagentic (?:apps?|protocols?|systems?|wallets?)\b",
+        r"\bautonomous (?:ai )?agents?\b",
+    ),
+    "depin": (
+        r"\bdepin\b",
+        r"\bdecentralized physical infrastructure\b",
+    ),
+    "memecoins": (
+        r"\bmeme coins?\b",
+        r"\bmemecoins?\b",
+    ),
+    "prediction markets": (
+        r"\bprediction markets?\b",
+        r"\bevent betting markets?\b",
+    ),
+    "privacy": (
+        r"\bprivacy\b",
+        r"\bprivate transactions?\b",
+        r"\bzero[- ]knowledge\b",
+        r"\bzk[- ]?proofs?\b",
+    ),
+    "real-world assets": (
+        r"\brwa\b",
+        r"\breal[- ]world assets?\b",
+        r"\btokeni[sz](?:ed|ation) (?:real[- ]world )?assets?\b",
+    ),
+    "restaking": (r"\brestaking\b",),
+    "stablecoins": (
+        r"\bstablecoins?\b",
+        r"\bdigital dollars?\b",
+    ),
+}
+
 
 DISCOVERY_LENSES = {
+    "counterevidence": (
+        "scam exploit hack vulnerability criticism insider lawsuit controversy "
+        "denies denied warning risk fraud fake breach halt failure flaw crash rug "
+        "credible credibility"
+    ),
     "official_builders": "official docs github builders developers release update upgrade",
     "funding_backers": "funding round raise capital investors financing grants backers",
     "onchain_tokenomics": "on-chain transactions activity holders volume fees supply staking unlocks",
     "adoption_usage": "adoption integration launch users customers usage payments partnership",
-    "counterevidence": "scam exploit hack vulnerability criticism insider lawsuit controversy",
 }
 
 STOP_WORDS = {
@@ -195,6 +236,15 @@ def _tokens(text: str) -> List[str]:
     return [value for value in values if value not in STOP_WORDS]
 
 
+def _canonical_narratives(text: str) -> set[str]:
+    normalized = re.sub(r"\s+", " ", str(text or "").lower())
+    return {
+        label
+        for label, patterns in CANONICAL_NARRATIVE_PATTERNS.items()
+        if any(re.search(pattern, normalized) for pattern in patterns)
+    }
+
+
 def cluster_signal_terms(
     evidence: Iterable[Any],
     min_domains: int = 2,
@@ -212,8 +262,10 @@ def cluster_signal_terms(
             "mentions": 0,
             "domains": set(),
             "lenses": set(),
+            "positive_domains": set(),
             "urls": set(),
             "source_types": set(),
+            "canonical_theme": False,
         }
     )
 
@@ -230,6 +282,8 @@ def cluster_signal_terms(
             for left, right in zip(words, words[1:])
             if left != right
         )
+        canonical_narratives = _canonical_narratives(f"{title} {quote}")
+        phrases.update(canonical_narratives)
         url = getattr(item, "source_url", "")
         lens = getattr(item, "research_lens", None)
         source_type = getattr(item, "source_type", "unknown")
@@ -245,18 +299,31 @@ def cluster_signal_terms(
                 signal["domains"].add(domain)
             if lens:
                 signal["lenses"].add(lens)
+            if domain and lens in POSITIVE_DISCOVERY_LENSES:
+                signal["positive_domains"].add(domain)
             if url:
                 signal["urls"].add(url)
             if source_type:
                 signal["source_types"].add(source_type)
+            if phrase in canonical_narratives:
+                signal["canonical_theme"] = True
 
     candidates = []
     for label, signal in signals.items():
         if " " not in label and label not in SINGLE_TERM_NARRATIVES:
             continue
-        if len(signal["domains"]) < min_domains or len(signal["lenses"]) < min_lenses:
+        if len(signal["domains"]) < min_domains:
             continue
-        if len(signal["lenses"] & POSITIVE_DISCOVERY_LENSES) < 2:
+        positive_lenses = signal["lenses"] & POSITIVE_DISCOVERY_LENSES
+        cross_source_theme_watch = (
+            signal["canonical_theme"]
+            and len(signal["positive_domains"]) >= min_domains
+        )
+        cross_lens_candidate = (
+            len(signal["lenses"]) >= min_lenses
+            and len(positive_lenses) >= 2
+        )
+        if not (cross_source_theme_watch or cross_lens_candidate):
             continue
         if not (signal["source_types"] - {"social_lead"}):
             continue
@@ -273,11 +340,16 @@ def cluster_signal_terms(
                 "mentions": signal["mentions"],
                 "independent_domains": sorted(signal["domains"]),
                 "lenses": sorted(signal["lenses"]),
-                "positive_lenses": sorted(
-                    signal["lenses"] & POSITIVE_DISCOVERY_LENSES
-                ),
+                "positive_lenses": sorted(positive_lenses),
+                "positive_domains": sorted(signal["positive_domains"]),
                 "source_types": sorted(signal["source_types"]),
                 "evidence_urls": sorted(signal["urls"])[:5],
+                "research_strength": (
+                    "cross_lens_candidate"
+                    if cross_lens_candidate
+                    else "cross_source_watch"
+                ),
+                "canonical_theme": bool(signal["canonical_theme"]),
                 "classification_only": True,
             }
         )
@@ -360,6 +432,17 @@ def discover_narratives(
         "started_at": started_at,
         "status": status,
         "research_provider": getattr(provider, "provider_name", "custom"),
+        "research_provider_requested": getattr(
+            provider,
+            "requested_provider",
+            getattr(provider, "provider_name", "custom"),
+        ),
+        "deep_research_active": getattr(
+            provider,
+            "deep_research_active",
+            getattr(provider, "provider_name", "custom") == "tavily",
+        ),
+        "provider_fallback_reason": getattr(provider, "fallback_reason", None),
         "provider_warnings": list(getattr(provider, "warnings", []) or []),
         "queries": queries,
         "lenses": lens_reports,

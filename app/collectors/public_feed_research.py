@@ -94,17 +94,24 @@ _LENS_TERMS = {
     "builders",
     "capital",
     "controversy",
+    "credible",
+    "credibility",
+    "crash",
     "criticism",
     "customers",
     "developers",
     "docs",
     "exploit",
+    "failure",
+    "fake",
     "fees",
     "financing",
     "funding",
+    "fraud",
     "github",
     "grants",
     "hack",
+    "halt",
     "holders",
     "insider",
     "integration",
@@ -133,6 +140,13 @@ _LENS_TERMS = {
     "users",
     "volume",
     "vulnerability",
+    "warning",
+    "risk",
+    "rug",
+    "breach",
+    "denied",
+    "denies",
+    "flaw",
 }
 
 
@@ -224,6 +238,39 @@ def _query_terms(query: str) -> tuple[set[str], set[str]]:
     return anchor_terms, lens_terms
 
 
+def _word_forms(value: str) -> set[str]:
+    """Return conservative inflection variants for one search token.
+
+    The old prefix matcher treated unrelated words such as ``inside`` and
+    ``insider`` as equivalent.  Discovery queries only need small grammatical
+    variations (launch/launches, release/released, holder/holders), so keep the
+    normalization intentionally narrow.
+    """
+    word = str(value or "").strip().lower()
+    if not word:
+        return set()
+    forms = {word}
+    if len(word) >= 5 and word.endswith("ies"):
+        forms.add(f"{word[:-3]}y")
+    if len(word) >= 5 and word.endswith("es"):
+        forms.add(word[:-2])
+        forms.add(word[:-1])
+    elif len(word) >= 5 and word.endswith("s"):
+        forms.add(word[:-1])
+    if len(word) >= 6 and word.endswith("ed"):
+        forms.add(word[:-2])
+        forms.add(word[:-1])
+    if len(word) >= 7 and word.endswith("ing"):
+        forms.add(word[:-3])
+        forms.add(f"{word[:-3]}e")
+    return {item for item in forms if len(item) >= 3}
+
+
+def _match_count(terms: set[str], values: set[str]) -> int:
+    value_forms = {form for value in values for form in _word_forms(value)}
+    return sum(bool(_word_forms(term) & value_forms) for term in terms)
+
+
 def _rank_result(
     result: ResearchResult,
     anchor_terms: set[str],
@@ -232,27 +279,12 @@ def _rank_result(
     title_tokens = set(_TOKEN_PATTERN.findall(result.title.lower()))
     body_tokens = set(_TOKEN_PATTERN.findall(result.snippet.lower()))
 
-    def match_count(terms: set[str], values: set[str]) -> int:
-        matches = 0
-        for term in terms:
-            if any(
-                term == value
-                or (
-                    min(len(term), len(value)) >= 5
-                    and abs(len(term) - len(value)) <= 3
-                    and (term.startswith(value) or value.startswith(term))
-                )
-                for value in values
-            ):
-                matches += 1
-        return matches
-
-    anchor_title = match_count(anchor_terms, title_tokens)
-    anchor_body = match_count(anchor_terms, body_tokens)
+    anchor_title = _match_count(anchor_terms, title_tokens)
+    anchor_body = _match_count(anchor_terms, body_tokens)
     if anchor_terms and not (anchor_title or anchor_body):
         return None
-    lens_title = match_count(lens_terms, title_tokens)
-    lens_body = match_count(lens_terms, body_tokens)
+    lens_title = _match_count(lens_terms, title_tokens)
+    lens_body = _match_count(lens_terms, body_tokens)
     if lens_terms and not (lens_title or lens_body):
         return None
     return anchor_title * 8 + anchor_body * 4 + lens_title * 3 + lens_body
@@ -301,6 +333,9 @@ class PublicFeedResearchProvider(ResearchProvider):
         )
         self.as_of = (as_of or datetime.now(timezone.utc)).astimezone(timezone.utc)
         self.warnings: list[str] = []
+        self.requested_provider = "public_rss"
+        self.deep_research_active = False
+        self.fallback_reason: str | None = None
         self._results: list[ResearchResult] | None = None
 
     def _fetch_source(

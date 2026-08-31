@@ -1,5 +1,6 @@
 import requests
 
+from app.agents.narrative_discovery import discover_narratives
 from app.agents.narrative_detective import results_to_evidence
 from app.collectors.public_feed_research import (
     FeedSource,
@@ -54,6 +55,34 @@ ATOM = b"""<?xml version="1.0"?>
     <updated>2026-08-27T10:00:00Z</updated>
   </entry>
 </feed>"""
+
+COUNTER_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>Inside the stablecoin payments battle</title>
+    <link>https://news.example/payments-battle</link>
+    <description>Digital dollar infrastructure competes with Swift.</description>
+  </item>
+  <item>
+    <title>Token insider lawsuit expands</title>
+    <link>https://news.example/insider-lawsuit</link>
+    <description>Investigators alleged insider misconduct.</description>
+  </item>
+  <item>
+    <title>Stablecoins not credible for payments, official says</title>
+    <link>https://news.example/not-credible</link>
+    <description>The official questioned stablecoin credibility.</description>
+  </item>
+</channel></rss>"""
+
+OVERLAP_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>Project denies launching fake token</title>
+    <link>https://news.example/denied-launch</link>
+    <description>The project warned users that the launch was not authorized.</description>
+  </item>
+</channel></rss>"""
 
 
 class Response:
@@ -143,6 +172,38 @@ def test_public_feed_provider_reports_partial_and_total_source_failure_safely():
         raise AssertionError("total feed failure should fail closed")
 
 
+def test_public_feed_lens_matching_uses_inflections_without_prefix_false_positives():
+    provider = PublicFeedResearchProvider(
+        session=Session({SECONDARY_FEED.url: Response(COUNTER_RSS)}),
+        feeds=(SECONDARY_FEED,),
+        max_age_days=None,
+    )
+
+    results = provider.search(
+        "crypto narratives scam exploit hack vulnerability criticism insider "
+        "lawsuit credible credibility",
+        limit=5,
+    )
+
+    assert {result.url for result in results} == {
+        "https://news.example/insider-lawsuit",
+        "https://news.example/not-credible",
+    }
+
+
+def test_discovery_assigns_overlapping_negative_story_to_counterevidence_first():
+    provider = PublicFeedResearchProvider(
+        session=Session({SECONDARY_FEED.url: Response(OVERLAP_RSS)}),
+        feeds=(SECONDARY_FEED,),
+        max_age_days=None,
+    )
+
+    report = discover_narratives(provider, topic="crypto narratives", limit=5)
+
+    assert report["lead_count"] == 1
+    assert report["evidence"][0]["research_lens"] == "counterevidence"
+
+
 def test_default_provider_uses_public_feeds_without_tavily_key(monkeypatch):
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
@@ -151,6 +212,11 @@ def test_default_provider_uses_public_feeds_without_tavily_key(monkeypatch):
 
     assert isinstance(fallback, PublicFeedResearchProvider)
     assert isinstance(tavily, TavilyResearchProvider)
+    assert fallback.requested_provider == "auto"
+    assert fallback.deep_research_active is False
+    assert fallback.fallback_reason == "tavily_key_missing"
+    assert any("TAVILY_API_KEY" in warning for warning in fallback.warnings)
+    assert tavily.deep_research_active is True
 
 
 def test_explicit_public_feed_mode_does_not_spend_tavily_key(monkeypatch):
