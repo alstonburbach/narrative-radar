@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def test_launch_watch_has_bounded_off_minute_schedule_and_merge_trigger():
+def test_launch_watch_has_five_minute_schedule_and_merge_trigger():
     workflow = (
         Path(__file__).parents[1]
         / ".github"
@@ -10,7 +10,7 @@ def test_launch_watch_has_bounded_off_minute_schedule_and_merge_trigger():
     ).read_text(encoding="utf-8")
 
     trigger = workflow[workflow.index("on:") : workflow.index("permissions:")]
-    assert 'cron: "7-59/10 * * * *"' in trigger
+    assert 'cron: "*/5 * * * *"' in trigger
     assert 'cron: "*/15 * * * *"' not in trigger
     assert (
         'push:\n'
