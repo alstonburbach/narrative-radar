@@ -61,7 +61,7 @@ def _venue_label(value: Any) -> str:
 def _signal_label(value: Any) -> str:
     return {
         "screened_research": "SCREENED RESEARCH",
-        "research_now": "RESEARCH NOW — MANUAL LINK CHECK",
+        "research_now": "RESEARCH NOW — LINK CHECK INCOMPLETE",
         "queued_security": "QUEUED FOR SECURITY",
         "market_watch": "WATCHING MARKET",
         "blocked_market_risk": "BLOCKED: MARKET RISK",
@@ -81,6 +81,23 @@ def _candidate_lines(candidate: Mapping[str, Any], index: int) -> list[str]:
     sells = int(_number(candidate.get("sells_1h")) or 0)
     age = _number(candidate.get("pair_age_minutes"))
     age_text = "n/a" if age is None else (f"{age / 60:.1f}h" if age >= 60 else f"{age:.0f}m")
+    coverage = bundler.get("coverage") or {}
+    linked_clusters = int(_number(bundler.get("linked_cluster_count")) or 0)
+    blocking_clusters = int(
+        _number(bundler.get("blocking_cluster_count"))
+        or len(bundler.get("hard_blockers") or [])
+    )
+    largest_share = _number(bundler.get("largest_cluster_supply_share_pct"))
+    largest_share_text = "n/a" if largest_share is None else f"{largest_share:.4g}%"
+    block_start = bundler.get("launch_block_start")
+    block_end = bundler.get("launch_block_end")
+    scope = str(bundler.get("analysis_scope") or "not reported")
+    if block_start is not None and block_end is not None:
+        scope += f"; blocks {block_start}-{block_end}"
+    owners = bundler.get("first_acquisition_owner_count")
+    if owners is not None:
+        scope += f"; {owners} first-acquisition owner(s)"
+    gate_reason = candidate.get("gate_reason") or candidate.get("signal_note")
 
     lines = [
         f"### {index}. {_cell(name)} ({_cell(symbol)})",
@@ -103,8 +120,15 @@ def _candidate_lines(candidate: Mapping[str, Any], index: int) -> list[str]:
         f"| GoPlus security | {_cell(security.get('status'))} / {_cell(security.get('risk_level'))} |",
         f"| Security blockers | {_cell(', '.join(security.get('hard_blockers') or []) or 'none shown')} |",
         f"| Linked-wallet check | {_cell(bundler.get('status'))} |",
+        f"| Linked-wallet provider | {_cell(bundler.get('provider'))} |",
+        f"| Linked clusters / blockers | {linked_clusters} / {blocking_clusters} |",
+        f"| Largest linked-cluster share | {largest_share_text} |",
+        f"| Same-block coverage | {_cell(coverage.get('same_block'))} |",
+        f"| Pre-funding coverage | {_cell(coverage.get('pre_acquisition_funding'))} |",
+        f"| Linked-wallet scope | {_cell(scope)} |",
+        f"| Gate reason | {_cell(gate_reason)} |",
         "",
-        _cell(candidate.get("signal_note") or "Research review is required."),
+        _cell(gate_reason or "Research review is required."),
     ]
     dex_url = _safe_url(candidate.get("dex_url"))
     if dex_url:
@@ -121,16 +145,25 @@ def _candidate_lines(candidate: Mapping[str, Any], index: int) -> list[str]:
 
     cautions = list(market_screen.get("cautions") or [])
     blockers = list(market_screen.get("blockers") or [])
-    if blockers or cautions or bundler.get("status") != "complete":
+    linked_blockers = list(bundler.get("hard_blockers") or [])
+    if blockers or cautions or bundler.get("status") != "complete" or linked_blockers:
         lines.extend(["", "**Needs attention:**"])
         for blocker in blockers[:5]:
             lines.append(f"- Market blocker: `{_cell(blocker)}`")
         for caution in cautions[:4]:
             lines.append(f"- {_cell(caution)}")
+        for blocker in linked_blockers[:5]:
+            lines.append(f"- Linked-wallet blocker: `{_cell(blocker)}`")
         if bundler.get("status") != "complete":
             lines.append(
-                "- Linked-wallet or same-block concentration is not fully cleared."
+                "- The bounded wallet check is incomplete. Missing history remains unknown—not safe."
             )
+    lines.extend(
+        [
+            "",
+            "_Wallet links are bounded on-chain observations, not proof of common ownership. A complete result means only that the stated window and providers completed._",
+        ]
+    )
     return lines
 
 
@@ -156,7 +189,7 @@ def render_venue_report(report: Mapping[str, Any]) -> str:
         f"eligible Pump.fun/Robinhood profiles: `{_cell(report.get('eligible_profiles'))}`",
         f"GoPlus scans: `{_cell(report.get('security_scans'))}`; "
         f"Helius holder scans: `{_cell(report.get('holder_scans'))}`; "
-        f"Helius linked-wallet scans: `{_cell(report.get('bundler_scans'))}`",
+        f"bounded linked-wallet scans: `{_cell(report.get('bundler_scans'))}`",
         "",
     ]
     if alert_candidates:

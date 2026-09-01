@@ -197,3 +197,60 @@ def test_run_analysis_merges_detected_linked_wallet_blockers(monkeypatch):
     assert report["token_security"]["risk_level"] == "high"
     assert report["red_team"]["risk_level"] == "high"
     assert "token_security" in report["decision_gate"]["blocking_failures"]
+
+
+def test_run_analysis_runs_robinhood_link_check_with_exact_pair_context(monkeypatch):
+    market = {
+        "found": True,
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "token_name": "Robinhood Test",
+        "token_symbol": "RH",
+        "chain": "robinhood",
+        "dex": "uniswap",
+        "pair_address": "0x2222222222222222222222222222222222222222",
+        "pair_created_at": 1_700_000_000_000,
+        "price_usd": 0.01,
+        "market_cap": 100_000,
+        "fdv": 100_000,
+        "liquidity_usd": 50_000,
+        "volume_24h": 200_000,
+        "price_change_24h": 15,
+    }
+    monkeypatch.setattr("app.pipeline.fetch_market_data", lambda *args, **kwargs: dict(market))
+
+    class BundlerProvider:
+        provider_name = "fake-robinhood-links"
+
+        def fetch(self, token_address, chain, **kwargs):
+            assert token_address == market["contract_address"]
+            assert chain == "robinhood"
+            assert kwargs["pair_address"] == market["pair_address"]
+            assert kwargs["pair_created_at"] == market["pair_created_at"]
+            return {
+                "status": "complete",
+                "provider": self.provider_name,
+                "hard_blockers": ["same_block_acquisition_concentration"],
+                "flags": [
+                    {
+                        "code": "same_block_acquisition_concentration",
+                        "severity": "high",
+                        "message": "Concentrated same-block cohort requires review.",
+                    }
+                ],
+                "execution_enabled": False,
+            }
+
+    report = run_analysis(
+        market["contract_address"],
+        chain="robinhood",
+        bundler_provider=BundlerProvider(),
+        security_provider=FakeSecurityProvider(),
+        persist=False,
+    )
+
+    analysis = report["token_security"]["bundler_analysis"]
+    assert analysis["provider"] == "fake-robinhood-links"
+    assert "same_block_acquisition_concentration" in report["token_security"][
+        "hard_blockers"
+    ]
+    assert report["token_security"]["promotion_eligible"] is False

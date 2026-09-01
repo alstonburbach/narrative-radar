@@ -188,8 +188,12 @@ def _change_state(candidate: dict, previous: dict | None) -> str:
     return "unchanged"
 
 
-def _default_bundler_provider() -> tuple[Any | None, str | None]:
+def _default_bundler_provider(chain: str) -> tuple[Any | None, str | None]:
     try:
+        if str(chain or "").strip().lower() in {"robinhood", "robinhood_chain"}:
+            from app.collectors.evm_bundler_provider import RobinhoodBundlerProvider
+
+            return RobinhoodBundlerProvider(), None
         from app.collectors.bundler_provider import HeliusBundlerProvider
 
         return HeliusBundlerProvider(), None
@@ -214,9 +218,7 @@ def run_venue_watch(
     """Collect launch leads and return only change-based research alerts.
 
     ``screened_research`` is still not a buy instruction. It only means every
-    configured research check completed without a hard blocker. Robinhood Chain
-    currently remains ``research_now`` after GoPlus because an EVM same-block
-    linked-wallet adapter has not been added yet.
+    configured bounded research check completed without a hard blocker.
     """
     collector = provider or DexScreenerVenueProvider()
     security = security_provider or GoPlusTokenSecurityProvider()
@@ -246,10 +248,11 @@ def run_venue_watch(
     security_scans = 0
     holder_scans = 0
     bundler_scans = 0
+    bundler_scans_by_chain: dict[str, int] = {}
     active_adoption_provider = adoption_provider
     adoption_provider_error = None
-    active_bundler_provider = bundler_provider
-    bundler_provider_error = None
+    active_bundler_providers: dict[str, Any] = {}
+    bundler_provider_errors: dict[str, str | None] = {}
 
     for candidate in candidates:
         preliminary = str((candidate.get("market_screen") or {}).get("status"))
@@ -392,27 +395,12 @@ def run_venue_watch(
                         "Holder coverage is incomplete; the candidate remains queued."
                     )
                 continue
-        if not security_passed:
+        if not security_passed and candidate.get("venue") != "robinhood_chain":
             candidate["signal_status"] = "blocked_security"
             candidate["signal_note"] = (
                 "Contract-security or distribution checks did not pass."
             )
-            continue
-
-        if candidate.get("venue") != "pump_fun":
-            candidate["bundler_analysis"] = {
-                "status": "not_available",
-                "hard_blockers": [],
-                "execution_enabled": False,
-                "note": (
-                    "Robinhood Chain same-block and linked-funder clustering is not "
-                    "implemented yet; manual review remains required."
-                ),
-            }
-            candidate["signal_status"] = "research_now"
-            candidate["signal_note"] = (
-                "Market and GoPlus checks passed; EVM linked-wallet review is still required."
-            )
+            candidate["gate_reason"] = candidate["signal_note"]
             continue
 
         key = (
@@ -423,39 +411,74 @@ def run_venue_watch(
         previous_bundler = ((previous or {}).get("raw") or {}).get(
             "bundler_analysis"
         ) or {}
+        chain_key = str(candidate.get("chain") or "unknown").strip().lower()
+        same_pair = str(previous_bundler.get("pair_address") or "").casefold() == str(
+            candidate.get("pair_address") or ""
+        ).casefold()
+        version_matches = (
+            chain_key != "robinhood"
+            or previous_bundler.get("analysis_version") == "robinhood-links-v1"
+        )
         if (
             previous_bundler.get("status") == "complete"
             and not previous_bundler.get("hard_blockers")
+            and (chain_key != "robinhood" or same_pair)
+            and version_matches
         ):
             bundler_analysis = dict(previous_bundler)
             bundler_analysis["reused_from_previous_scan"] = True
-        elif bundler_scans >= bundler_limit:
+        elif bundler_scans_by_chain.get(chain_key, 0) >= bundler_limit:
             bundler_analysis = {
                 "status": "not_scanned_capacity",
                 "hard_blockers": [],
                 "execution_enabled": False,
-                "note": "The bounded linked-wallet scan capacity was reached.",
+                "note": (
+                    f"The bounded {chain_key} linked-wallet scan capacity was reached."
+                ),
             }
         else:
-            if active_bundler_provider is None and bundler_provider_error is None:
-                active_bundler_provider, bundler_provider_error = (
-                    _default_bundler_provider()
+            active_bundler_provider = bundler_provider or active_bundler_providers.get(
+                chain_key
+            )
+            if (
+                active_bundler_provider is None
+                and chain_key not in bundler_provider_errors
+            ):
+                active_bundler_provider, provider_error = _default_bundler_provider(
+                    chain_key
                 )
+                bundler_provider_errors[chain_key] = provider_error
+                if active_bundler_provider is not None:
+                    active_bundler_providers[chain_key] = active_bundler_provider
             if active_bundler_provider is None:
                 bundler_analysis = {
                     "status": "not_configured",
-                    "provider": "helius",
+                    "provider": (
+                        "robinhood_rpc_blockscout"
+                        if chain_key == "robinhood"
+                        else "helius"
+                    ),
                     "hard_blockers": [],
                     "execution_enabled": False,
-                    "error": bundler_provider_error,
-                    "note": "Set HELIUS_API_KEY for bounded linked-wallet checks.",
+                    "error": bundler_provider_errors.get(chain_key),
+                    "note": (
+                        "Set HELIUS_API_KEY for bounded linked-wallet checks."
+                        if chain_key != "robinhood"
+                        else "Robinhood linked-wallet providers could not be configured."
+                    ),
                 }
             else:
                 bundler_scans += 1
+                bundler_scans_by_chain[chain_key] = (
+                    bundler_scans_by_chain.get(chain_key, 0) + 1
+                )
                 try:
                     bundler_analysis = active_bundler_provider.fetch(
                         token_address=candidate["contract_address"],
                         chain=candidate["chain"],
+                        pair_address=candidate.get("pair_address"),
+                        pair_created_at=candidate.get("pair_created_at"),
+                        pair_created_at_iso=candidate.get("pair_created_at_iso"),
                     )
                     if not isinstance(bundler_analysis, Mapping):
                         raise RuntimeError("bundler provider returned invalid data")
@@ -466,7 +489,30 @@ def run_venue_watch(
                     )
         candidate["bundler_analysis"] = bundler_analysis
         bundler_blockers = list(bundler_analysis.get("hard_blockers") or [])
-        if bundler_blockers:
+        gate_reasons = []
+        if not security_passed:
+            security_codes = list(token_security.get("hard_blockers") or [])
+            candidate["signal_status"] = "blocked_security"
+            gate_reasons.append(
+                "Contract-security or holder evidence is incomplete or blocked"
+                + (f": {', '.join(security_codes)}" if security_codes else ".")
+            )
+            if bundler_blockers:
+                gate_reasons.append(
+                    "The bounded wallet check also found concentrated links: "
+                    + ", ".join(bundler_blockers)
+                    + "."
+                )
+            elif bundler_analysis.get("status") == "complete":
+                gate_reasons.append(
+                    "The bounded Robinhood wallet check completed with no hard linked-wallet blocker observed."
+                )
+            else:
+                gate_reasons.append(
+                    "The bounded Robinhood wallet check is incomplete; wallet-link risk remains unknown."
+                )
+            candidate["signal_note"] = " ".join(gate_reasons)
+        elif bundler_blockers:
             candidate["signal_status"] = "blocked_linked_wallets"
             candidate["signal_note"] = (
                 "Observable linked-wallet concentration triggered a hard blocker."
@@ -481,6 +527,8 @@ def run_venue_watch(
             candidate["signal_note"] = (
                 "Market and token-security checks passed; linked-wallet review is incomplete."
             )
+        candidate["gate_reasons"] = gate_reasons or [candidate["signal_note"]]
+        candidate["gate_reason"] = candidate["signal_note"]
 
     notification_candidates = []
     for candidate in candidates:
@@ -514,6 +562,7 @@ def run_venue_watch(
     report["security_scans"] = security_scans
     report["holder_scans"] = holder_scans
     report["bundler_scans"] = bundler_scans
+    report["bundler_scans_by_chain"] = bundler_scans_by_chain
     report["notification"] = {
         "notify": bool(notification_candidates),
         "reason": (

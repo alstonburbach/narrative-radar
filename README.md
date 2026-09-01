@@ -14,10 +14,11 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Persists compact evidence snapshots and reports whether a narrative is strengthening, weakening, or still too new to judge across repeated runs.
 - On Solana, optionally records holder counts, token-account scan coverage, token supply, and bounded finalized transfer activity as separate on-chain activity proxies.
 - Uses Helius to inspect the earliest bounded Solana token transactions, group first-acquisition owners by shared fee payer, transaction, and slot, and trace bounded pre-acquisition SOL funding for the largest early wallets. Concentrated observable links block promotion; weak same-slot patterns remain review warnings.
+- On Robinhood Chain, inspects exact-pair transfer logs in a bounded launch-block window, groups first-acquisition wallets by transaction sender and block, and checks bounded normal/internal Blockscout funding history. Any provider gap remains partial rather than being called safe.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Runs narrative discovery from an owner-only phone issue form and posts material scheduled discoveries to one GitHub feed issue.
 - Scans free public feeds every four hours and runs one deeper Tavily-backed web scan daily when its key is configured, while notifying only on material evidence-backed changes.
-- Watches bounded DEX Screener latest-profile feeds every fifteen minutes for exact-contract Pump.fun and Robinhood Chain launch leads. It requires a confirmed launch venue, live pair, recent pair age, minimum liquidity/activity, and a GoPlus pass before a candidate can reach the phone research feed; one top Pump.fun candidate per run can receive the configured Helius linked-wallet check.
+- Watches bounded DEX Screener latest-profile feeds every fifteen minutes for exact-contract Pump.fun and Robinhood Chain launch leads. It requires a confirmed launch venue, live pair, recent pair age, minimum liquidity/activity, and separate contract-security and linked-wallet gates before a candidate can reach the phone research feed; one candidate per chain per run can receive the bounded wallet check.
 - Normalizes common narrative aliases (for example, stablecoin/digital-dollar and meme-coin/memecoin wording), rejects unsafe prefix matches such as `inside`/`insider`, and ranks cross-source watch options as `research_next`, `watch_for_confirmation`, or `insufficient_evidence`; every option remains blocked from possible-buy review until an exact contract passes token checks.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
@@ -66,9 +67,10 @@ bounded complete Helius holder scan may fill only that distribution gap; missing
 coverage still fails closed. It posts to
 one `[RADAR LAUNCH WATCH]` issue only when a new candidate reaches the available
 gates or materially strengthens. A Pump.fun address-pattern match alone is not
-enough; its launch DEX must also confirm the venue. Robinhood candidates remain
-explicitly marked for manual same-block/linked-wallet review until that EVM
-adapter is implemented.
+enough; its launch DEX must also confirm the venue. Robinhood candidates now run
+a bounded exact-pair same-block, transaction-sender, and indexed pre-funding
+check. The report exposes each coverage dimension, and partial RPC or explorer
+history remains unknown rather than passing.
 
 The launch-watch issue body is refreshed on every successful scheduled pass so
 the phone beta can read the current bounded screen without treating old alert
@@ -150,6 +152,13 @@ leaves `bundler_concentration` in manual review. Shared funders or same-slot
 activity can come from exchanges, sponsored transactions, airdrops, routers, or
 organic high-throughput trading, so these are observable risk links—not proof
 of common ownership or fraud.
+
+Robinhood Chain uses the official public RPC by default, or `ROBINHOOD_RPC_URL`
+for a production/archive provider. Bounded pre-acquisition history uses the
+official Blockscout instance and accepts an optional
+`ROBINHOOD_BLOCKSCOUT_API_KEY`. The adapter verifies mainnet chain ID 4663,
+chunks transfer-log queries, rejects removed/malformed logs, and reports partial
+coverage whenever an RPC chunk, transaction lookup, or funding page is missing.
 
 Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, a five-minute market-snapshot freshness gate, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
 

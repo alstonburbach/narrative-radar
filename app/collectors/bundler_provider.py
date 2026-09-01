@@ -404,7 +404,12 @@ class HeliusBundlerProvider:
             "note": note,
         }
 
-    def fetch(self, token_address: str, chain: str = "solana") -> dict:
+    def fetch(
+        self,
+        token_address: str,
+        chain: str = "solana",
+        **_: Any,
+    ) -> dict:
         token_address = str(token_address or "").strip()
         normalized_chain = str(chain or "").strip().lower()
         if not token_address:

@@ -262,32 +262,57 @@ def run_analysis(
             "execution_enabled": False,
             "note": "No market pair was found, so linked-wallet analysis was not run.",
         }
-    elif is_solana_chain(market.get("chain")):
+    elif is_solana_chain(market.get("chain")) or str(
+        market.get("chain") or requested_chain
+    ).strip().lower() in {"robinhood", "robinhood_chain"}:
+        bundler_chain = str(market.get("chain") or requested_chain).strip().lower()
+        is_robinhood = bundler_chain in {"robinhood", "robinhood_chain"}
         provider = bundler_provider
         provider_error = None
         if provider is None:
             try:
-                from app.collectors.bundler_provider import HeliusBundlerProvider
+                if is_robinhood:
+                    from app.collectors.evm_bundler_provider import (
+                        RobinhoodBundlerProvider,
+                    )
 
-                provider = HeliusBundlerProvider()
+                    provider = RobinhoodBundlerProvider()
+                else:
+                    from app.collectors.bundler_provider import HeliusBundlerProvider
+
+                    provider = HeliusBundlerProvider()
             except RuntimeError as exc:
                 provider_error = str(exc)
         if provider is None:
             bundler_analysis = {
                 "status": "not_configured",
-                "provider": "helius",
+                "provider": (
+                    "robinhood_rpc_blockscout" if is_robinhood else "helius"
+                ),
                 "hard_blockers": [],
                 "flags": [],
                 "error": provider_error,
                 "execution_enabled": False,
-                "note": "Set HELIUS_API_KEY to collect bounded Solana linked-wallet evidence.",
+                "note": (
+                    "Robinhood linked-wallet providers could not be configured."
+                    if is_robinhood
+                    else "Set HELIUS_API_KEY to collect bounded Solana linked-wallet evidence."
+                ),
             }
         else:
             try:
-                bundler_analysis = provider.fetch(
-                    token_address=contract_address,
-                    chain=market.get("chain") or requested_chain,
-                )
+                if is_robinhood:
+                    bundler_analysis = provider.fetch(
+                        token_address=contract_address,
+                        chain=bundler_chain,
+                        pair_address=market.get("pair_address"),
+                        pair_created_at=market.get("pair_created_at"),
+                    )
+                else:
+                    bundler_analysis = provider.fetch(
+                        token_address=contract_address,
+                        chain=bundler_chain,
+                    )
                 if not isinstance(bundler_analysis, Mapping):
                     raise RuntimeError("bundler provider returned invalid data")
                 bundler_analysis = dict(bundler_analysis)
