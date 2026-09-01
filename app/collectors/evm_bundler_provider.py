@@ -1,10 +1,13 @@
 """Bounded Robinhood Chain launch-wallet screening.
 
-The collector inspects exact-pair ERC-20 outflows, transaction senders, block
-cohorts, and bounded pre-acquisition funding history. These are observable risk
-indicators only: shared infrastructure and account abstraction can link
-unrelated users, while off-chain funding and private coordination can remain
-invisible. Missing history always produces a partial or failed result.
+The collector prefers exact-pair ERC-20 outflows. When discovery returns a
+32-byte pool identifier or a 20-byte address without bytecode, it can instead
+inspect explicitly labelled launch-window token-transfer recipients. Both
+methods add transaction senders, block cohorts, and bounded pre-receipt funding
+history. These are observable risk indicators only: shared infrastructure and
+account abstraction can link unrelated users, while off-chain funding and
+private coordination can remain invisible. Missing history always produces a
+partial or failed result.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import os
 import re
+import time
 from typing import Any, Mapping, Optional
 
 import requests
@@ -32,6 +36,7 @@ TRANSFER_TOPIC = (
 TOTAL_SUPPLY_SELECTOR = "0x18160ddd"
 
 _EVM_ADDRESS = re.compile(r"^0x[a-fA-F0-9]{40}$")
+_BYTES32_IDENTIFIER = re.compile(r"^0x[a-fA-F0-9]{64}$")
 _ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 _BURN_ADDRESSES = {
     _ZERO_ADDRESS,
@@ -110,6 +115,7 @@ class RobinhoodBundlerProvider:
         funding_page_limit: int = 2,
         funding_window_hours: int = 24 * 7,
         minimum_funding_wei: int = 100_000_000_000_000,
+        rpc_retry_backoff_seconds: float = 0.25,
     ):
         self.rpc_url = (
             rpc_url
@@ -135,6 +141,10 @@ class RobinhoodBundlerProvider:
         self.funding_page_limit = max(1, min(int(funding_page_limit), 5))
         self.funding_window_hours = max(1, min(int(funding_window_hours), 24 * 30))
         self.minimum_funding_wei = max(1, int(minimum_funding_wei))
+        self.rpc_retry_backoff_seconds = max(
+            0.0,
+            min(float(rpc_retry_backoff_seconds), 2.0),
+        )
 
     def _safe_error(self, exc: Exception) -> str:
         message = str(exc)
@@ -147,24 +157,52 @@ class RobinhoodBundlerProvider:
         return message
 
     def _rpc(self, method: str, params: list[Any]) -> Any:
+        response = None
+        for attempt in range(2):
+            try:
+                response = self.session.post(
+                    self.rpc_url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "narrative-radar-robinhood-links",
+                        "method": method,
+                        "params": params,
+                    },
+                    headers={"Content-Type": "application/json"},
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                break
+            except requests.RequestException as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                retryable_status = status == 429 or (
+                    isinstance(status, int) and 500 <= status < 600
+                )
+                retryable_network = isinstance(
+                    exc,
+                    (
+                        requests.ConnectionError,
+                        requests.Timeout,
+                        requests.exceptions.ChunkedEncodingError,
+                    ),
+                )
+                if attempt == 0 and (retryable_status or retryable_network):
+                    if self.rpc_retry_backoff_seconds:
+                        time.sleep(self.rpc_retry_backoff_seconds)
+                    continue
+                detail = f" with HTTP {status}" if status else ""
+                raise RuntimeError(
+                    f"Robinhood RPC {method} request failed{detail}."
+                ) from None
+
+        if response is None:
+            raise RuntimeError(f"Robinhood RPC {method} returned no response")
         try:
-            response = self.session.post(
-                self.rpc_url,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": "narrative-radar-robinhood-links",
-                    "method": method,
-                    "params": params,
-                },
-                headers={"Content-Type": "application/json"},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
             payload = response.json()
-        except requests.RequestException as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            detail = f" with HTTP {status}" if status else ""
-            raise RuntimeError(f"Robinhood RPC {method} request failed{detail}.") from None
+        except (TypeError, ValueError):
+            raise RuntimeError(
+                f"Robinhood RPC returned invalid JSON for {method}"
+            ) from None
         if not isinstance(payload, Mapping):
             raise RuntimeError(f"Robinhood RPC returned an invalid {method} response")
         if payload.get("error"):
@@ -474,7 +512,9 @@ class RobinhoodBundlerProvider:
         pair_created_at_iso: Any = None,
     ) -> dict:
         token = _address(token_address)
-        pair = _address(pair_address)
+        pair_identifier = str(pair_address or "").strip().lower()
+        pair = _address(pair_identifier)
+        pair_is_bytes32 = bool(_BYTES32_IDENTIFIER.fullmatch(pair_identifier))
         normalized_chain = str(chain or "").strip().lower()
         if normalized_chain not in {"robinhood", "robinhood_chain"}:
             result = self._base_result(
@@ -486,22 +526,44 @@ class RobinhoodBundlerProvider:
             return result
         if not token:
             raise ValueError("A valid EVM token_address is required")
-        if not pair:
+        if not pair_identifier:
             return self._base_result(
                 token,
                 "insufficient_data",
-                "The exact DEX pair is missing, so pair-outflow acquisition evidence cannot be attributed.",
+                "The exact DEX pair identifier is missing, so a bounded launch-wallet evidence method cannot be selected.",
             )
+        if not pair and not pair_is_bytes32:
+            result = self._base_result(
+                token,
+                "insufficient_data",
+                "The DEX pair identifier is neither a 20-byte EVM address nor a 32-byte pool identifier.",
+            )
+            result["pair_address"] = pair_identifier
+            return result
         created_timestamp = _timestamp(pair_created_at) or _timestamp(pair_created_at_iso)
         if created_timestamp is None:
-            return self._base_result(
+            result = self._base_result(
                 token,
                 "insufficient_data",
                 "The pair creation time is missing, so a bounded launch block window cannot be selected.",
             )
+            result["pair_address"] = pair_identifier
+            return result
 
         errors: list[str] = []
         warnings: list[str] = []
+        if pair_is_bytes32:
+            analysis_method = "bounded_token_transfer_first_recipients_fallback"
+            analysis_scope = (
+                "bounded_token_transfer_recipients_in_launch_blocks_without_exact_pair_attribution"
+            )
+            pair_identifier_kind = "bytes32_pool_identifier"
+            fallback_reason = "pair_identifier_is_not_a_20_byte_contract"
+        else:
+            analysis_method = "exact_pair_outflow_first_recipients"
+            analysis_scope = "exact_pair_outflows_in_bounded_launch_blocks"
+            pair_identifier_kind = "evm_contract_address"
+            fallback_reason = None
         try:
             chain_id = _hex_integer(self._rpc("eth_chainId", []))
             if chain_id != ROBINHOOD_CHAIN_ID:
@@ -510,8 +572,13 @@ class RobinhoodBundlerProvider:
                 )
             if not self._is_contract(token):
                 raise RuntimeError("The supplied token address has no deployed bytecode")
-            if not self._is_contract(pair):
-                raise RuntimeError("The supplied DEX pair address has no deployed bytecode")
+            if not pair_is_bytes32 and not self._is_contract(pair):
+                analysis_method = "bounded_token_transfer_first_recipients_fallback"
+                analysis_scope = (
+                    "bounded_token_transfer_recipients_in_launch_blocks_without_exact_pair_attribution"
+                )
+                pair_identifier_kind = "evm_address_without_bytecode"
+                fallback_reason = "pair_address_has_no_deployed_bytecode"
             latest_number = _hex_integer(self._rpc("eth_blockNumber", []))
             if latest_number is None:
                 raise RuntimeError("Robinhood RPC returned no latest block number")
@@ -522,12 +589,23 @@ class RobinhoodBundlerProvider:
                 "failed",
                 "The Robinhood launch-window setup failed; linked-wallet risk remains unknown.",
             )
-            result["pair_address"] = pair
+            result["pair_address"] = pair_identifier
+            result["pair_identifier_kind"] = pair_identifier_kind
+            result["analysis_method"] = analysis_method
+            result["analysis_scope"] = analysis_scope
             result["errors"] = [self._safe_error(exc)]
             return result
 
+        if fallback_reason:
+            warnings.append(
+                "The DEX pair was not a verified 20-byte deployed contract, so this fallback observes bounded token-transfer recipients and cannot attribute them to DEX purchases."
+            )
+
         start_block = max(0, launch_block - 2)
-        end_block = min(latest_number, launch_block + self.launch_block_limit - 1)
+        end_block = min(
+            latest_number,
+            start_block + self.launch_block_limit - 1,
+        )
         log_scan = self._logs(token, start_block, end_block)
         errors.extend(log_scan["errors"])
         if log_scan["chunks_completed"] == 0:
@@ -538,7 +616,10 @@ class RobinhoodBundlerProvider:
             )
             result.update(
                 {
-                    "pair_address": pair,
+                    "pair_address": pair_identifier,
+                    "pair_identifier_kind": pair_identifier_kind,
+                    "analysis_method": analysis_method,
+                    "analysis_scope": analysis_scope,
                     "launch_block_start": start_block,
                     "launch_block_end": end_block,
                     "errors": errors,
@@ -558,7 +639,20 @@ class RobinhoodBundlerProvider:
             if identity in seen_logs:
                 continue
             seen_logs.add(identity)
-            if transfer["from"] != pair or transfer["owner"] in _BURN_ADDRESSES | {token, pair}:
+            if fallback_reason:
+                excluded_senders = _BURN_ADDRESSES | {token}
+                excluded_recipients = _BURN_ADDRESSES | {token}
+                if pair:
+                    excluded_recipients.add(pair)
+                if (
+                    transfer["from"] in excluded_senders
+                    or transfer["owner"] in excluded_recipients
+                    or transfer["from"] == transfer["owner"]
+                ):
+                    continue
+            elif transfer["from"] != pair or transfer["owner"] in (
+                _BURN_ADDRESSES | {token, pair}
+            ):
                 continue
             decoded.append(transfer)
 
@@ -643,6 +737,26 @@ class RobinhoodBundlerProvider:
                 )
 
         clusters = []
+        transaction_cluster_note = (
+            "One launch-window token-transfer transaction credited multiple first observed EOA recipients; this fallback cannot establish that the receipts were DEX acquisitions."
+            if fallback_reason
+            else "One pair-outflow transaction credited multiple wallets; a router or account-abstraction flow can also create this pattern."
+        )
+        sender_cluster_note = (
+            "One top-level transaction sender initiated token transfers to multiple first observed EOA recipients; distribution infrastructure can also create this pattern."
+            if fallback_reason
+            else "One top-level transaction sender initiated acquisitions for multiple wallets; smart-wallet infrastructure can also cause this."
+        )
+        block_cluster_note = (
+            "Several first observed launch-window token-transfer recipients appeared in one block; this fallback cannot establish that the receipts were DEX acquisitions."
+            if fallback_reason
+            else "Several first observed pair acquisitions landed in one block; Robinhood's fast blocks and organic bursts can also cause this."
+        )
+        funder_cluster_note = (
+            "Multiple early token-transfer recipients received native funds from one address before their first observed receipt; that association does not prove common control."
+            if fallback_reason
+            else "Multiple early wallets received native funds from one address before acquisition; that association does not prove common control."
+        )
         groups: dict[str, list[dict]] = defaultdict(list)
         for record in eoa_records:
             groups[record["transaction_hash"]].append(record)
@@ -654,7 +768,7 @@ class RobinhoodBundlerProvider:
                         identifier,
                         records,
                         supply,
-                        "One pair-outflow transaction credited multiple wallets; a router or account-abstraction flow can also create this pattern.",
+                        transaction_cluster_note,
                     )
                 )
 
@@ -670,7 +784,7 @@ class RobinhoodBundlerProvider:
                         identifier,
                         records,
                         supply,
-                        "One top-level transaction sender initiated acquisitions for multiple wallets; smart-wallet infrastructure can also cause this.",
+                        sender_cluster_note,
                     )
                 )
 
@@ -685,7 +799,7 @@ class RobinhoodBundlerProvider:
                         identifier,
                         records,
                         supply,
-                        "Several first observed pair acquisitions landed in one block; Robinhood's fast blocks and organic bursts can also cause this.",
+                        block_cluster_note,
                         same_block_only=True,
                     )
                 )
@@ -701,7 +815,7 @@ class RobinhoodBundlerProvider:
                         identifier,
                         records,
                         supply,
-                        "Multiple early wallets received native funds from one address before acquisition; that association does not prove common control.",
+                        funder_cluster_note,
                     )
                 )
 
@@ -781,16 +895,23 @@ class RobinhoodBundlerProvider:
             "analysis_version": self.analysis_version,
             "chain": "robinhood",
             "contract_address": token,
-            "pair_address": pair,
-            "analysis_scope": "exact_pair_outflows_in_bounded_launch_blocks",
+            "pair_address": pair_identifier,
+            "pair_identifier_kind": pair_identifier_kind,
+            "analysis_method": analysis_method,
+            "analysis_scope": analysis_scope,
+            "fallback_reason": fallback_reason,
             "launch_block_start": start_block,
             "launch_block_end": end_block,
             "launch_block_limit": self.launch_block_limit,
             "log_chunks_requested": log_scan["chunks_requested"],
             "log_chunks_completed": log_scan["chunks_completed"],
             "transfer_logs_returned": len(log_scan["rows"]),
-            "pair_outflows_decoded": len(decoded),
-            "first_acquisition_owner_count": len(eoa_records),
+            "pair_outflows_decoded": len(decoded) if not fallback_reason else 0,
+            "launch_window_transfers_decoded": len(decoded),
+            "first_acquisition_owner_count": (
+                len(eoa_records) if not fallback_reason else None
+            ),
+            "launch_window_recipient_count": len(eoa_records),
             "contract_recipients_excluded": contract_recipients,
             "recipient_sample_truncated": recipients_truncated,
             "transactions_requested": min(len(unique_hashes), self.transaction_limit),
@@ -834,6 +955,8 @@ class RobinhoodBundlerProvider:
             "errors": errors,
             "execution_enabled": False,
             "note": (
-                "This bounded check can find observable same-block, transaction-sender, and indexed funding links. It cannot prove separate human ownership or reveal every off-chain relationship."
+                "This bounded fallback can find observable same-block, transaction-sender, and indexed pre-receipt funding links among first eligible EOA token-transfer recipients. It cannot attribute those receipts to DEX purchases, prove separate human ownership, or reveal every off-chain relationship."
+                if fallback_reason
+                else "This bounded check can find observable same-block, transaction-sender, and indexed funding links. It cannot prove separate human ownership or reveal every off-chain relationship."
             ),
         }
