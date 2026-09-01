@@ -171,11 +171,13 @@ def render_venue_report(report: Mapping[str, Any]) -> str:
     notification = report.get("notification") or {}
     alert_candidates = list(notification.get("candidates") or [])
     all_candidates = list(report.get("candidates") or [])
-    # The issue body doubles as the beta's current bounded screen.  Always show
+    # The issue body doubles as the beta's current bounded screen. Always show
     # the latest ranked candidates there; alert comments are still created only
     # when the notification decision reports a material change.
     displayed = all_candidates[:8]
     counts = Counter(str(item.get("signal_status") or "unknown") for item in all_candidates)
+    research_now_count = counts.get("screened_research", 0) + counts.get("research_now", 0)
+    blocked_count = sum(value for key, value in counts.items() if key.startswith("blocked_"))
 
     lines = [
         "<!-- narrative-radar-launch-watch -->",
@@ -183,8 +185,20 @@ def render_venue_report(report: Mapping[str, Any]) -> str:
         "",
         "**Exact-contract research alerts—not automatic buy signals.**",
         "",
-        f"Observed: `{_cell(report.get('observed_at'))}`",
+        # Stable compatibility block for the phone beta. These labels are
+        # intentionally simple so presentation changes cannot make a healthy
+        # scanner look offline merely because a parser lost its anchors.
+        "<!-- narra-radar-live-snapshot -->",
+        "### Live snapshot",
+        "",
+        f"Update time: `{_cell(report.get('observed_at'))}`",
+        f"Leads checked: `{_cell(report.get('profiles_received'))}`",
+        f"Research now: `{research_now_count}`",
+        f"Blocked: `{blocked_count}`",
+        f"Visible candidates: `{len(displayed)}`",
         f"Source: `{_cell(report.get('provider'))}`",
+        "",
+        f"Observed: `{_cell(report.get('observed_at'))}`",
         f"Profiles checked: `{_cell(report.get('profiles_received'))}`; "
         f"eligible Pump.fun/Robinhood profiles: `{_cell(report.get('eligible_profiles'))}`",
         f"GoPlus scans: `{_cell(report.get('security_scans'))}`; "
@@ -225,7 +239,7 @@ def render_venue_report(report: Mapping[str, Any]) -> str:
             f"- Screened research: `{counts.get('screened_research', 0)}`",
             f"- Research now / manual link check: `{counts.get('research_now', 0)}`",
             f"- Market watch or queued: `{counts.get('market_watch', 0) + counts.get('queued_security', 0)}`",
-            f"- Blocked: `{sum(value for key, value in counts.items() if key.startswith('blocked_'))}`",
+            f"- Blocked: `{blocked_count}`",
             "",
             "A DEX profile is promotional material, not independent evidence. Even a screened result can fail, lose liquidity, or collapse. No wallet, private key, order, or automatic execution is used.",
         ]
