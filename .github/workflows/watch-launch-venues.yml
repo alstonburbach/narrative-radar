@@ -1,0 +1,132 @@
+name: watch Pump.fun and Robinhood launches
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: narrative-radar-launch-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore launch-watch history
+        uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-launch-db-${{ github.run_id }}
+          restore-keys: narrative-radar-launch-db-
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Scan exact-contract launch leads
+        continue-on-error: true
+        run: >-
+          python -m app.venue_watch_main
+          --venues pump_fun,robinhood_chain
+          --profile-limit-per-venue 12
+          --candidate-limit 12
+          --security-limit 8
+          --onchain-limit 1
+          --bundler-limit 1
+          --json > launch-watch.json
+      - name: Render phone report and notification decision
+        if: ${{ always() && hashFiles('launch-watch.json') != '' }}
+        run: >-
+          python -m app.venue_watch_report_main launch-watch.json
+          --markdown-output launch-watch.md
+          --notification-output launch-notification.json
+      - name: Write job summary
+        if: ${{ always() && hashFiles('launch-watch.json') != '' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          with open("launch-watch.json", "r", encoding="utf-8") as handle:
+              report = json.load(handle)
+          notification = report.get("notification", {})
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("## Pump.fun + Robinhood Chain launch watch\n")
+              handle.write(f"- Status: `{report.get('status')}`\n")
+              handle.write(f"- Eligible profiles: `{report.get('eligible_profiles', 0)}`\n")
+              handle.write(f"- Ranked candidates: `{report.get('candidate_count', 0)}`\n")
+              handle.write(f"- GoPlus scans: `{report.get('security_scans', 0)}`\n")
+              handle.write(f"- Helius holder scans: `{report.get('holder_scans', 0)}`\n")
+              handle.write(f"- Helius linked-wallet scans: `{report.get('bundler_scans', 0)}`\n")
+              handle.write(f"- New alerts: `{notification.get('candidate_count', 0)}`\n")
+              handle.write("- Execution enabled: `false`\n")
+          PY
+      - name: Notify only on a new or strengthened gated candidate
+        if: ${{ always() && hashFiles('launch-notification.json') != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const decision = JSON.parse(
+              fs.readFileSync('launch-notification.json', 'utf8')
+            );
+            if (!decision.notify) {
+              core.info(`No phone alert: ${decision.reason}`);
+              return;
+            }
+            const title = '[RADAR LAUNCH WATCH] Pump.fun + Robinhood Chain';
+            const body = fs.readFileSync('launch-watch.md', 'utf8');
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+                per_page: 100,
+              }
+            );
+            const existing = issues.find(
+              (issue) => !issue.pull_request && issue.title === title
+            );
+            if (!existing) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                assignees: [context.repo.owner],
+              });
+              return;
+            }
+            if (existing.state !== 'open') {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'open',
+              });
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              body,
+            });
+      - name: Upload bounded launch-watch report
+        if: ${{ always() && hashFiles('launch-watch.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-launch-watch-${{ github.run_id }}
+          path: |
+            launch-watch.json
+            launch-watch.md

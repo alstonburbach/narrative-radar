@@ -24,7 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="contract_option",
         help="Token contract address (named form for GitHub Actions)",
     )
-    parser.add_argument("--chain", default="unknown", help="Chain id, such as base or solana")
+    parser.add_argument(
+        "--chain",
+        default="unknown",
+        help="Chain id, such as solana, robinhood, or base",
+    )
     parser.add_argument("--research-limit", type=int, default=5)
     parser.add_argument("--paper-usd", type=float, default=None)
     parser.add_argument(

@@ -17,12 +17,13 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Runs narrative discovery from an owner-only phone issue form and posts material scheduled discoveries to one GitHub feed issue.
 - Scans free public feeds every four hours and runs one deeper Tavily-backed web scan daily when its key is configured, while notifying only on material evidence-backed changes.
+- Watches bounded DEX Screener latest-profile feeds every fifteen minutes for exact-contract Pump.fun and Robinhood Chain launch leads. It requires a confirmed launch venue, live pair, recent pair age, minimum liquidity/activity, and a GoPlus pass before a candidate can reach the phone research feed; one top Pump.fun candidate per run can receive the configured Helius linked-wallet check.
 - Normalizes common narrative aliases (for example, stablecoin/digital-dollar and meme-coin/memecoin wording), rejects unsafe prefix matches such as `inside`/`insider`, and ranks cross-source watch options as `research_next`, `watch_for_confirmation`, or `insufficient_evidence`; every option remains blocked from possible-buy review until an exact contract passes token checks.
 - Counts recurring signals across the full scan window and attaches transparent follow-up queries for builder, adoption, funding, on-chain, and counterevidence review.
 - Runs explainable red-team flags and a non-predictive research score.
 - Produces hypothetical market-cap projections and manual-review order previews without placing orders, with position size screened against current liquidity.
 - Applies a transparent manual-review gate that reports whether score, evidence quality, freshness, red-team risk, source checks, and optional order-preview requirements pass.
-- Uses read-only GoPlus security data on Base, BSC, Ethereum, and Solana to block obvious honeypots, sell restrictions, severe taxes, dangerous admin permissions, exposed LP ownership, and extreme holder concentration.
+- Uses read-only GoPlus security data on Base, BSC, Ethereum, Robinhood Chain, and Solana to block obvious honeypots, sell restrictions, severe taxes, dangerous admin permissions, exposed LP ownership, and extreme holder concentration.
 - Evaluates fixed-stake paper baskets, including target hit rates, break-even winner multiples, known-cost coverage, open versus realized results, narrative-family concentration, and forward-test timestamp integrity.
 - Freezes owner-created paper signals from a phone issue, preserves the original timestamp and market-cap snapshot, and marks open signals hourly without custody or execution.
 - Includes a wallet accounting foundation that matches fee-adjusted realized PnL to FIFO cost basis, reports fee drag, and keeps external deposits/withdrawals separate.
@@ -37,6 +38,7 @@ cp .env.example .env
 python -m app.main --contract TOKEN_CONTRACT --chain base --paper-usd 100
 python -m app.discovery_main --topic "stablecoin rails" --json
 python -m app.main --contract SOLANA_MINT --chain solana --json
+python -m app.venue_watch_main --venues pump_fun,robinhood_chain --json
 python -m app.paper_basket_main --input paper-basket.json --stake-usd 50 --target-multiple 10 --json
 ```
 
@@ -53,6 +55,20 @@ broad default or enter a theme such as `AI agents`, `stablecoin payments`, or
 `Solana consumer apps`. The phone report shows recent evidence links and only
 labels a candidate when a term survives at least two independent domains and
 two positive research lenses.
+
+The scheduled **Pump.fun + Robinhood Chain launch watch** is the faster exact-
+contract lane. Every fifteen minutes it checks bounded latest token profiles,
+confirms the contract against a live pair, applies transparent liquidity,
+activity, age, drawdown, sell-pressure, and market-cap/liquidity gates, and then
+runs read-only GoPlus security on the strongest bounded candidates. When a new
+Pump.fun token's authority data is available before GoPlus holder indexing, one
+bounded complete Helius holder scan may fill only that distribution gap; missing
+coverage still fails closed. It posts to
+one `[RADAR LAUNCH WATCH]` issue only when a new candidate reaches the available
+gates or materially strengthens. A Pump.fun address-pattern match alone is not
+enough; its launch DEX must also confirm the venue. Robinhood candidates remain
+explicitly marked for manual same-block/linked-wallet review until that EVM
+adapter is implemented.
 
 Choose **Start a paper signal** once you want to measure a token prospectively.
 The issue workflow freezes the issue time and first live market-cap snapshot,
@@ -110,7 +126,7 @@ Wallet reports also show the realized-PnL observation window, profitable calenda
 
 ## Manual order previews
 
-Every contract scan now requests a read-only GoPlus security report. The gate
+Every supported contract scan now requests a read-only GoPlus security report. The gate
 fails closed when that report is unavailable and blocks high-risk findings such
 as honeypot behavior, restrictive selling, severe taxes, closed or mutable
 contract controls, exposed liquidity ownership, or concentrated holders. These

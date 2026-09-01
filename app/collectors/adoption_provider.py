@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -68,6 +68,8 @@ class OnchainActivitySnapshot:
     largest_scanned_owner_share_pct: Optional[float] = None
     top_10_scanned_owner_share_pct: Optional[float] = None
     holder_concentration_is_lower_bound: bool = False
+    concentration_excluded_owner_count: int = 0
+    concentration_excluded_token_amount_raw: Optional[str] = None
     last_indexed_slot: Optional[int] = None
     token_supply: Optional[float] = None
     token_supply_raw: Optional[str] = None
@@ -101,6 +103,7 @@ class AdoptionProvider(ABC):
         holder_limit: int = 2_000,
         transfer_limit: int = 100,
         activity_window_hours: int = 24,
+        concentration_excluded_owners: Optional[Iterable[str]] = None,
     ) -> dict:
         raise NotImplementedError
 
@@ -156,6 +159,7 @@ class HeliusAdoptionProvider(AdoptionProvider):
         self,
         token_address: str,
         max_accounts: int,
+        excluded_owners: Optional[Iterable[str]] = None,
     ) -> dict:
         max_accounts = max(1, min(int(max_accounts), 10_000))
         page_limit = min(100, max_accounts)
@@ -166,6 +170,13 @@ class HeliusAdoptionProvider(AdoptionProvider):
         unknown_amount_rows = 0
         owner_balances: dict[str, Decimal] = {}
         scanned_token_amount = Decimal("0")
+        excluded = {
+            str(value).strip().casefold()
+            for value in (excluded_owners or [])
+            if str(value).strip()
+        }
+        excluded_owner_addresses = set()
+        excluded_token_amount = Decimal("0")
         total = None
         last_indexed_slot = None
 
@@ -201,6 +212,11 @@ class HeliusAdoptionProvider(AdoptionProvider):
                 if amount is not None:
                     scanned_token_amount += amount
                 owner = str(account.get("owner") or "").strip()
+                if owner and owner.casefold() in excluded:
+                    excluded_owner_addresses.add(owner.casefold())
+                    if amount is not None:
+                        excluded_token_amount += amount
+                    continue
                 if owner:
                     owners.add(owner)
                     if amount is not None:
@@ -232,6 +248,8 @@ class HeliusAdoptionProvider(AdoptionProvider):
             "scanned_token_amount_raw": str(scanned_token_amount),
             "largest_owner_amount_raw": str(owner_amounts[0]) if owner_amounts else None,
             "top_10_owner_amount_raw": str(sum(owner_amounts[:10])) if owner_amounts else None,
+            "excluded_owner_count": len(excluded_owner_addresses),
+            "excluded_token_amount_raw": str(excluded_token_amount),
         }
 
     def _fetch_supply(self, token_address: str) -> dict:
@@ -371,6 +389,7 @@ class HeliusAdoptionProvider(AdoptionProvider):
         holder_limit: int = 2_000,
         transfer_limit: int = 100,
         activity_window_hours: int = 24,
+        concentration_excluded_owners: Optional[Iterable[str]] = None,
     ) -> dict:
         if not token_address or not token_address.strip():
             raise ValueError("token_address is required")
@@ -393,7 +412,11 @@ class HeliusAdoptionProvider(AdoptionProvider):
         successful_sections = 0
         holders = {}
         try:
-            holders = self._fetch_holder_accounts(token_address, holder_limit)
+            holders = self._fetch_holder_accounts(
+                token_address,
+                holder_limit,
+                excluded_owners=concentration_excluded_owners,
+            )
             snapshot.holder_count = holders["holder_count"]
             snapshot.token_account_count = holders["token_account_count"]
             snapshot.holder_scan_total = holders["total"]
@@ -403,6 +426,16 @@ class HeliusAdoptionProvider(AdoptionProvider):
             snapshot.holder_count_is_lower_bound = not holders["complete"]
             snapshot.holder_concentration_is_lower_bound = not holders["complete"]
             snapshot.scanned_token_amount_raw = holders["scanned_token_amount_raw"]
+            snapshot.concentration_excluded_owner_count = holders[
+                "excluded_owner_count"
+            ]
+            snapshot.concentration_excluded_token_amount_raw = holders[
+                "excluded_token_amount_raw"
+            ]
+            if holders["excluded_owner_count"]:
+                snapshot.warnings.append(
+                    "Known market-infrastructure owner(s) were excluded from holder-concentration metrics."
+                )
             if holders["unknown_amount_rows"]:
                 snapshot.warnings.append(
                     "Some token accounts had no parseable amount; supply coverage and concentration are incomplete."

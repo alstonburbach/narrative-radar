@@ -133,6 +133,49 @@ def test_helius_adoption_provider_fails_closed_for_unsupported_chain():
     assert snapshot["holder_count"] is None
 
 
+def test_holder_concentration_can_exclude_a_known_market_owner():
+    session = Session(
+        {
+            "getTokenAccounts": {
+                "jsonrpc": "2.0",
+                "result": {
+                    "total": 2,
+                    "token_accounts": [
+                        {"address": "curve-ata", "owner": "curve-owner", "amount": 900},
+                        {"address": "user-ata", "owner": "wallet-1", "amount": 100},
+                    ],
+                },
+            },
+            "getTokenSupply": {
+                "jsonrpc": "2.0",
+                "result": {
+                    "value": {"amount": "1000", "decimals": 0, "uiAmount": 1000}
+                },
+            },
+            "getTransactionsForAddress": {
+                "jsonrpc": "2.0",
+                "result": {"data": []},
+            },
+        }
+    )
+    provider = HeliusAdoptionProvider(api_key="test-key", session=session)
+
+    snapshot = provider.fetch_snapshot(
+        "MINT",
+        chain="solana",
+        holder_limit=10,
+        transfer_limit=1,
+        concentration_excluded_owners=["curve-owner"],
+    )
+
+    assert snapshot["scanned_supply_coverage_pct"] == 100
+    assert snapshot["largest_scanned_owner_share_pct"] == 10
+    assert snapshot["top_10_scanned_owner_share_pct"] == 10
+    assert snapshot["concentration_excluded_owner_count"] == 1
+    assert snapshot["concentration_excluded_token_amount_raw"] == "900"
+    assert any("market-infrastructure" in item for item in snapshot["warnings"])
+
+
 def test_helius_adoption_provider_requires_a_key(monkeypatch):
     monkeypatch.delenv("HELIUS_API_KEY", raising=False)
 

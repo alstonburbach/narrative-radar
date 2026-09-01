@@ -144,6 +144,33 @@ def initialize_database():
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS venue_candidate_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venue TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                contract_address TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                preliminary_status TEXT NOT NULL,
+                signal_status TEXT NOT NULL,
+                screen_score REAL,
+                liquidity_usd REAL,
+                volume_1h REAL,
+                market_cap REAL,
+                pair_created_at TEXT,
+                raw_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_venue_candidate_latest
+            ON venue_candidate_observations (
+                venue, contract_address, observed_at DESC
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS wallet_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 wallet_address TEXT NOT NULL,
@@ -560,6 +587,87 @@ def get_discovery_history(
             item["candidate_signal_labels"] = []
         history.append(item)
     return history
+
+
+def get_latest_venue_candidate_observation(
+    venue: str,
+    contract_address: str,
+) -> dict | None:
+    """Return the latest saved launch-watch state for one exact contract."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, venue, chain, contract_address, observed_at,
+                   preliminary_status, signal_status, screen_score,
+                   liquidity_usd, volume_1h, market_cap, pair_created_at,
+                   raw_json
+            FROM venue_candidate_observations
+            WHERE venue = ? AND lower(contract_address) = lower(?)
+            ORDER BY observed_at DESC, id DESC
+            LIMIT 1
+            """,
+            (str(venue), str(contract_address)),
+        ).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    try:
+        result["raw"] = json.loads(result.pop("raw_json"))
+    except (TypeError, json.JSONDecodeError):
+        result["raw"] = {}
+        result.pop("raw_json", None)
+    return result
+
+
+def save_venue_candidate_observation(candidate: dict) -> int:
+    """Persist a bounded launch-watch result for change-only phone alerts."""
+    venue = str(candidate.get("venue") or "").strip()
+    contract = str(candidate.get("contract_address") or "").strip()
+    if not venue or not contract:
+        raise ValueError("venue and contract_address are required")
+    market_screen = candidate.get("market_screen") or {}
+    metrics = {
+        "venue": venue,
+        "chain": str(candidate.get("chain") or "unknown").strip().lower(),
+        "contract_address": contract,
+        "observed_at": candidate.get("observed_at")
+        or datetime.now(timezone.utc).isoformat(),
+        "preliminary_status": str(
+            market_screen.get("status") or "not_evaluated"
+        ),
+        "signal_status": str(candidate.get("signal_status") or "not_evaluated"),
+        "screen_score": market_screen.get("score"),
+        "liquidity_usd": candidate.get("liquidity_usd"),
+        "volume_1h": candidate.get("volume_1h"),
+        "market_cap": candidate.get("market_cap"),
+        "pair_created_at": candidate.get("pair_created_at_iso"),
+    }
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO venue_candidate_observations (
+                venue, chain, contract_address, observed_at,
+                preliminary_status, signal_status, screen_score,
+                liquidity_usd, volume_1h, market_cap, pair_created_at,
+                raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                metrics["venue"],
+                metrics["chain"],
+                metrics["contract_address"],
+                metrics["observed_at"],
+                metrics["preliminary_status"],
+                metrics["signal_status"],
+                metrics["screen_score"],
+                metrics["liquidity_usd"],
+                metrics["volume_1h"],
+                metrics["market_cap"],
+                metrics["pair_created_at"],
+                json.dumps(candidate),
+            ),
+        )
+        return cursor.lastrowid
 
 
 def save_wallet_run(report: dict) -> int:
