@@ -39,6 +39,7 @@ def run_analysis(
     order_side: str = "buy",
     persist: bool = True,
     adoption_provider: Optional[Any] = None,
+    bundler_provider: Optional[Any] = None,
     adoption_holder_limit: int = 2_000,
     adoption_transfer_limit: int = 100,
     adoption_window_hours: int = 24,
@@ -246,6 +247,87 @@ def run_analysis(
                             "note": "The on-chain collector failed closed; no activity signal was inferred.",
                         }
                     )
+
+    if not collect_onchain:
+        token_security["bundler_analysis"] = {
+            "status": "not_requested",
+            "hard_blockers": [],
+            "execution_enabled": False,
+            "note": "On-chain collection was disabled, so linked-wallet analysis was not run.",
+        }
+    elif not market.get("found"):
+        token_security["bundler_analysis"] = {
+            "status": "skipped_no_market_pair",
+            "hard_blockers": [],
+            "execution_enabled": False,
+            "note": "No market pair was found, so linked-wallet analysis was not run.",
+        }
+    elif is_solana_chain(market.get("chain")):
+        provider = bundler_provider
+        provider_error = None
+        if provider is None:
+            try:
+                from app.collectors.bundler_provider import HeliusBundlerProvider
+
+                provider = HeliusBundlerProvider()
+            except RuntimeError as exc:
+                provider_error = str(exc)
+        if provider is None:
+            bundler_analysis = {
+                "status": "not_configured",
+                "provider": "helius",
+                "hard_blockers": [],
+                "flags": [],
+                "error": provider_error,
+                "execution_enabled": False,
+                "note": "Set HELIUS_API_KEY to collect bounded Solana linked-wallet evidence.",
+            }
+        else:
+            try:
+                bundler_analysis = provider.fetch(
+                    token_address=contract_address,
+                    chain=market.get("chain") or requested_chain,
+                )
+                if not isinstance(bundler_analysis, Mapping):
+                    raise RuntimeError("bundler provider returned invalid data")
+                bundler_analysis = dict(bundler_analysis)
+            except Exception as exc:  # noqa: BLE001 - fail closed without leaking credentials
+                bundler_analysis = {
+                    "status": "failed",
+                    "provider": getattr(provider, "provider_name", "custom"),
+                    "hard_blockers": [],
+                    "flags": [],
+                    "error_type": type(exc).__name__,
+                    "execution_enabled": False,
+                    "note": "Linked-wallet collection failed safely; manual bundle review is required.",
+                }
+        token_security["bundler_analysis"] = bundler_analysis
+
+        bundler_blockers = list(bundler_analysis.get("hard_blockers") or [])
+        if bundler_blockers:
+            token_security["hard_blockers"] = list(
+                dict.fromkeys(
+                    list(token_security.get("hard_blockers") or [])
+                    + bundler_blockers
+                )
+            )
+            token_security["promotion_eligible"] = False
+            if token_security.get("risk_level") != "critical":
+                token_security["risk_level"] = "high"
+            existing_flags = list(token_security.get("flags") or [])
+            existing_flag_codes = {
+                str(flag.get("code"))
+                for flag in existing_flags
+                if isinstance(flag, Mapping)
+            }
+            for flag in bundler_analysis.get("flags") or []:
+                if not isinstance(flag, Mapping):
+                    continue
+                if str(flag.get("code")) in existing_flag_codes:
+                    continue
+                existing_flags.append(dict(flag))
+                existing_flag_codes.add(str(flag.get("code")))
+            token_security["flags"] = existing_flags
 
     narrative_quality = assess_narrative_quality(
         evidence,

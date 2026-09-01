@@ -248,6 +248,7 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
             )
     holder_distribution = security.get("holder_distribution") or {}
     lp_distribution = security.get("lp_distribution") or {}
+    bundler = security.get("bundler_analysis") or {}
     lines.extend(
         [
             "",
@@ -266,11 +267,46 @@ def render_issue_report(report: Mapping[str, Any]) -> str:
             ),
             (
                 "- Bundler/linked-wallet status: `"
-                f"{_cell((security.get('bundler_analysis') or {}).get('status'))}` — "
-                f"{_cell((security.get('bundler_analysis') or {}).get('note'))}"
+                f"{_cell(bundler.get('status'))}` — "
+                f"{_cell(bundler.get('note'))}"
             ),
         ]
     )
+    if bundler.get("provider"):
+        lines.extend(
+            [
+                (
+                    "- Earliest token transactions checked: `"
+                    f"{_cell(bundler.get('launch_transactions_scanned'))}` / "
+                    f"limit `{_cell(bundler.get('launch_transaction_limit'))}`"
+                ),
+                (
+                    "- First-acquisition owners checked: `"
+                    f"{_cell(bundler.get('first_acquisition_owner_count'))}`"
+                ),
+                (
+                    "- Pre-acquisition funding histories checked: `"
+                    f"{_cell(bundler.get('funding_wallets_checked'))}` / "
+                    f"`{_cell(bundler.get('funding_wallets_requested'))}`"
+                ),
+                (
+                    "- Observable linked clusters / blockers: `"
+                    f"{_cell(bundler.get('linked_cluster_count'))}` / "
+                    f"`{_cell(bundler.get('blocking_cluster_count'))}`"
+                ),
+                (
+                    "- Largest observed linked-cluster supply share: `"
+                    f"{_cell(bundler.get('largest_cluster_supply_share_pct'))}%`"
+                ),
+            ]
+        )
+        for cluster in list(bundler.get("clusters") or [])[:5]:
+            review_label = "BLOCKER" if cluster.get("hard_blocker") else "review"
+            lines.append(
+                f"  - **{review_label}:** {_cell(cluster.get('type'))} — "
+                f"{_cell(cluster.get('owner_count'))} wallet(s), "
+                f"{_cell(cluster.get('concentration_share_pct'))}% observed supply"
+            )
 
     lines.extend(["", "### Paper-only market preview"])
     if preview:
