@@ -1,8 +1,13 @@
 name: watch Pump.fun and Robinhood launches
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/watch-launch-venues.yml"
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7-59/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -11,11 +16,12 @@ permissions:
 
 concurrency:
   group: narrative-radar-launch-watch
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   watch:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     env:
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
       ROBINHOOD_RPC_URL: ${{ secrets.ROBINHOOD_RPC_URL }}
