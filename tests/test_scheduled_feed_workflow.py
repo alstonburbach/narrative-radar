@@ -1,6 +1,35 @@
 from pathlib import Path
 
 
+def test_launch_watch_has_bounded_off_minute_schedule_and_merge_trigger():
+    workflow = (
+        Path(__file__).parents[1]
+        / ".github"
+        / "workflows"
+        / "watch-launch-venues.yml"
+    ).read_text(encoding="utf-8")
+
+    trigger = workflow[workflow.index("on:") : workflow.index("permissions:")]
+    assert 'cron: "7-59/10 * * * *"' in trigger
+    assert 'cron: "*/15 * * * *"' not in trigger
+    assert (
+        'push:\n'
+        '    branches:\n'
+        '      - main\n'
+        '    paths:\n'
+        '      - ".github/workflows/watch-launch-venues.yml"'
+    ) in trigger
+
+    assert "group: narrative-radar-launch-watch" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "cancel-in-progress: true" not in workflow
+    timeout_line = next(
+        line for line in workflow.splitlines() if "timeout-minutes:" in line
+    )
+    timeout_minutes = int(timeout_line.split(":", 1)[1].strip())
+    assert 0 < timeout_minutes < 10
+
+
 def test_scheduled_feed_persistence_is_separate_from_alerting():
     workflow = (
         Path(__file__).parents[1]
