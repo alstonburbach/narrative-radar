@@ -135,7 +135,7 @@ def test_venue_collector_blocks_profile_without_pair_and_fast_drawdown():
     ).collect(observed_at=observed)
     by_address = {item["contract_address"]: item for item in report["candidates"]}
 
-    assert "rapid_five_minute_drawdown" in by_address[ROBINHOOD]["market_screen"]["blockers"]
+    assert "early_five_minute_breakdown" in by_address[ROBINHOOD]["market_screen"]["blockers"]
     assert by_address[second]["market_screen"]["blockers"] == ["no_active_pair"]
     assert all(
         item["market_screen"]["status"] == "blocked_market_risk"
