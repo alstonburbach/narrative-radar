@@ -44,15 +44,47 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Scan exact-contract launch leads
         continue-on-error: true
-        run: >-
-          python -m app.venue_watch_main
-          --venues pump_fun,robinhood_chain
-          --profile-limit-per-venue 12
-          --candidate-limit 12
-          --security-limit 8
-          --onchain-limit 1
-          --bundler-limit 1
-          --json > launch-watch.json
+        shell: bash
+        run: |
+          set +e
+          primary_output="$(mktemp)"
+          timeout --signal=TERM --kill-after=10s 180s \
+            python -m app.venue_watch_main \
+              --venues pump_fun,robinhood_chain \
+              --profile-limit-per-venue 12 \
+              --candidate-limit 12 \
+              --security-limit 8 \
+              --onchain-limit 1 \
+              --bundler-limit 1 \
+              --json > "$primary_output"
+          primary_status=$?
+          if [ "$primary_status" -eq 0 ] && python -m json.tool "$primary_output" >/dev/null 2>&1; then
+            mv "$primary_output" launch-watch.json
+            exit 0
+          fi
+
+          rm -f "$primary_output"
+          echo "Full evidence scan did not finish in time; running a fast fail-closed screen."
+
+          fallback_output="$(mktemp)"
+          timeout --signal=TERM --kill-after=10s 60s \
+            python -m app.venue_watch_main \
+              --venues pump_fun,robinhood_chain \
+              --profile-limit-per-venue 8 \
+              --candidate-limit 8 \
+              --security-limit 4 \
+              --onchain-limit 0 \
+              --bundler-limit 0 \
+              --json > "$fallback_output"
+          fallback_status=$?
+          if [ "$fallback_status" -eq 0 ] && python -m json.tool "$fallback_output" >/dev/null 2>&1; then
+            mv "$fallback_output" launch-watch.json
+            exit 0
+          fi
+
+          rm -f "$fallback_output"
+          echo "Both bounded scans failed; preserving the last valid phone report."
+          exit 1
       - name: Render phone report and notification decision
         if: ${{ always() && hashFiles('launch-watch.json') != '' }}
         run: >-
