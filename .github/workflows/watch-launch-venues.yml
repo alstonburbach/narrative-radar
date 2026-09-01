@@ -8,7 +8,7 @@ on:
       - ".github/workflows/watch-launch-venues.yml"
       - "app/github_issue_venue.py"
   schedule:
-    - cron: "7-59/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
