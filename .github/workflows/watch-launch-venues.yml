@@ -46,9 +46,9 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set +e
+          set -u -o pipefail
           primary_output="$(mktemp)"
-          timeout --signal=TERM --kill-after=10s 180s \
+          if timeout --signal=TERM --kill-after=5s 180s \
             python -m app.venue_watch_main \
               --venues pump_fun,robinhood_chain \
               --profile-limit-per-venue 12 \
@@ -56,28 +56,34 @@ jobs:
               --security-limit 8 \
               --onchain-limit 1 \
               --bundler-limit 1 \
-              --json > "$primary_output"
-          primary_status=$?
-          if [ "$primary_status" -eq 0 ] && python -m json.tool "$primary_output" >/dev/null 2>&1; then
+              --json > "$primary_output"; then
+            echo "Full evidence scan completed."
+          else
+            echo "Full evidence scan ended early; validating any completed report."
+          fi
+          if python -m json.tool "$primary_output" >/dev/null 2>&1; then
             mv "$primary_output" launch-watch.json
             exit 0
           fi
 
           rm -f "$primary_output"
-          echo "Full evidence scan did not finish in time; running a fast fail-closed screen."
+          echo "Running a fast fail-closed screen."
 
           fallback_output="$(mktemp)"
-          timeout --signal=TERM --kill-after=10s 60s \
+          if timeout --signal=TERM --kill-after=5s 90s \
             python -m app.venue_watch_main \
               --venues pump_fun,robinhood_chain \
               --profile-limit-per-venue 8 \
               --candidate-limit 8 \
-              --security-limit 4 \
+              --security-limit 0 \
               --onchain-limit 0 \
               --bundler-limit 0 \
-              --json > "$fallback_output"
-          fallback_status=$?
-          if [ "$fallback_status" -eq 0 ] && python -m json.tool "$fallback_output" >/dev/null 2>&1; then
+              --json > "$fallback_output"; then
+            echo "Fail-closed screen completed."
+          else
+            echo "Fail-closed screen ended early; validating any completed report."
+          fi
+          if python -m json.tool "$fallback_output" >/dev/null 2>&1; then
             mv "$fallback_output" launch-watch.json
             exit 0
           fi
