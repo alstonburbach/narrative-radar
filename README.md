@@ -70,6 +70,12 @@ enough; its launch DEX must also confirm the venue. Robinhood candidates remain
 explicitly marked for manual same-block/linked-wallet review until that EVM
 adapter is implemented.
 
+The launch-watch issue body is refreshed on every successful scheduled pass so
+the phone beta can read the current bounded screen without treating old alert
+comments as live candidates. New comments remain change-only alerts: they are
+added only when a candidate first clears a gate, materially strengthens, or is
+downgraded for safety.
+
 Choose **Start a paper signal** once you want to measure a token prospectively.
 The issue workflow freezes the issue time and first live market-cap snapshot,
 runs the full research and safety gate, and starts with a hypothetical $50 stake

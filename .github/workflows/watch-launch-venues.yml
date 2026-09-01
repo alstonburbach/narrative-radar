@@ -71,7 +71,7 @@ jobs:
               handle.write(f"- New alerts: `{notification.get('candidate_count', 0)}`\n")
               handle.write("- Execution enabled: `false`\n")
           PY
-      - name: Notify only on a new or strengthened gated candidate
+      - name: Refresh the current phone watch and notify on material changes
         if: ${{ always() && hashFiles('launch-notification.json') != '' }}
         uses: actions/github-script@v7
         with:
@@ -80,10 +80,6 @@ jobs:
             const decision = JSON.parse(
               fs.readFileSync('launch-notification.json', 'utf8')
             );
-            if (!decision.notify) {
-              core.info(`No phone alert: ${decision.reason}`);
-              return;
-            }
             const title = '[RADAR LAUNCH WATCH] Pump.fun + Robinhood Chain';
             const body = fs.readFileSync('launch-watch.md', 'utf8');
             const issues = await github.paginate(
@@ -99,6 +95,10 @@ jobs:
               (issue) => !issue.pull_request && issue.title === title
             );
             if (!existing) {
+              if (!decision.notify) {
+                core.info(`No launch-watch issue yet: ${decision.reason}`);
+                return;
+              }
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -108,13 +108,24 @@ jobs:
               });
               return;
             }
-            if (existing.state !== 'open') {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
+            const assignees = (existing.assignees || []).map(
+              (assignee) => assignee.login
+            );
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              body,
+              ...(decision.notify ? {
                 state: 'open',
-              });
+                assignees: assignees.includes(context.repo.owner)
+                  ? assignees
+                  : [...assignees, context.repo.owner],
+              } : {}),
+            });
+            if (!decision.notify) {
+              core.info(`Current phone watch refreshed: ${decision.reason}`);
+              return;
             }
             await github.rest.issues.createComment({
               owner: context.repo.owner,

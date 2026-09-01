@@ -138,7 +138,10 @@ def render_venue_report(report: Mapping[str, Any]) -> str:
     notification = report.get("notification") or {}
     alert_candidates = list(notification.get("candidates") or [])
     all_candidates = list(report.get("candidates") or [])
-    displayed = alert_candidates or all_candidates[:8]
+    # The issue body doubles as the beta's current bounded screen.  Always show
+    # the latest ranked candidates there; alert comments are still created only
+    # when the notification decision reports a material change.
+    displayed = all_candidates[:8]
     counts = Counter(str(item.get("signal_status") or "unknown") for item in all_candidates)
 
     lines = [
