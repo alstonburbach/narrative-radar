@@ -114,8 +114,11 @@ from free public feeds every four hours and performs one deeper `auto` scan
 daily at 13:43 UTC (Tavily when its
 key exists, otherwise the public-feed fallback). It can also run manually. It
 caches compact discovery history and opens or comments on one
-`[RADAR FEED]` issue only when fresh cross-source candidates first appear,
-change, or materially strengthen. Unchanged or weak scans do not notify. Set
+`[RADAR FEED]` issue. Every successful scheduled pass refreshes that issue body
+so the private beta can distinguish current unattended evidence from an old
+alert. Comments remain change-only alerts: unchanged or weak scans update the
+current evidence without notifying, while fresh cross-source candidates that
+first appear, change, or materially strengthen also add an alert comment. Set
 `TAVILY_API_KEY` for broader live web research; set `HELIUS_API_KEY` for Solana
 on-chain activity collection. Scheduled public-feed checks never consume the
 Tavily key; the single daily deep scan is the spend-bounded web-search pass.

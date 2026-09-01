@@ -35,6 +35,10 @@ on:
           - auto
           - tavily
 
+concurrency:
+  group: narrative-radar-discovery-feed
+  cancel-in-progress: false
+
 jobs:
   discover:
     runs-on: ubuntu-latest
@@ -101,7 +105,9 @@ jobs:
                   handle.write(f"- Persisted signals: `{history.get('persisted_signals')}`\\n")
               handle.write("\\nResults are unverified leads; no trade signal or order is produced.\\n")
           PY
-      - name: Notify on a material narrative update
+      - name: Persist the current scheduled narrative feed
+        id: persist_feed
+        if: ${{ env.TOPIC == 'crypto narratives' && env.CHAIN == 'unknown' }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -109,10 +115,6 @@ jobs:
             const decision = JSON.parse(
               fs.readFileSync('discovery-notification.json', 'utf8')
             );
-            if (!decision.notify) {
-              core.info(`No alert: ${decision.reason}`);
-              return;
-            }
             const title = '[RADAR FEED] Narrative discoveries';
             const body = fs.readFileSync('narrative-discovery.md', 'utf8');
             const issues = await github.paginate(
@@ -125,42 +127,76 @@ jobs:
               }
             );
             const existing = issues.find(
-              (issue) => !issue.pull_request && issue.title === title
+              (issue) => !issue.pull_request
+                && issue.title === title
+                && issue.user?.login === 'github-actions[bot]'
             );
+            let issueNumber;
             if (!existing) {
-              await github.rest.issues.create({
+              const created = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
                 body,
-                assignees: [context.repo.owner],
               });
+              issueNumber = created.data.number;
+            } else {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+              issueNumber = existing.number;
+            }
+            core.setOutput('issue_number', String(issueNumber));
+            core.setOutput('notify', String(Boolean(decision.notify)));
+            core.setOutput('reason', String(decision.reason || 'unknown'));
+            core.info(`Current scheduled narrative feed refreshed: ${decision.reason}`);
+      - name: Notify on a material narrative update
+        if: ${{ steps.persist_feed.outputs.notify == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          FEED_ISSUE_NUMBER: ${{ steps.persist_feed.outputs.issue_number }}
+          NOTIFICATION_REASON: ${{ steps.persist_feed.outputs.reason }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.FEED_ISSUE_NUMBER);
+            if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) {
+              core.setFailed('The canonical narrative feed issue number was invalid.');
               return;
             }
-            const assignees = (existing.assignees || []).map(
+            const current = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+            });
+            const assignees = (current.data.assignees || []).map(
               (assignee) => assignee.login
             );
-            if (!assignees.includes(context.repo.owner)) {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
-                assignees: [...assignees, context.repo.owner],
-              });
-            }
-            if (existing.state !== 'open') {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
-                state: 'open',
-              });
-            }
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              state: 'open',
+              assignees: assignees.includes(context.repo.owner)
+                ? assignees
+                : [...assignees, context.repo.owner],
+            });
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: existing.number,
-              body,
+              issue_number: issueNumber,
+              body: [
+                '<!-- narrative-radar-discovery-alert -->',
+                '## Scheduled narrative evidence changed',
+                '',
+                `Reason: \`${process.env.NOTIFICATION_REASON || 'material_change'}\``,
+                '',
+                'The issue body now contains the latest full source snapshot.',
+                '',
+                '**Research leads only—not an automatic buy signal.**',
+              ].join('\n'),
             });
       - name: Upload discovery report
         uses: actions/upload-artifact@v4

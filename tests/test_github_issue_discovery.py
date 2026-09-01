@@ -27,6 +27,7 @@ solana
 
 def _report():
     return {
+        "started_at": "2026-09-01T14:17:00+00:00",
         "topic": "AI agents and crypto payments",
         "chain": "solana",
         "status": "complete",
@@ -98,6 +99,7 @@ def test_phone_discovery_report_shows_candidates_sources_and_boundaries():
     markdown = render_discovery_report(_report())
 
     assert "Narrative Radar discovery" in markdown
+    assert "Observed: `2026-09-01T14:17:00+00:00`" in markdown
     assert "AI agents" in markdown
     assert "public_rss" in markdown
     assert "Payment agents launch" in markdown

@@ -144,6 +144,8 @@ def render_discovery_report(report: Mapping[str, Any]) -> str:
         "",
         "**Research leads only—not automatic buy signals.**",
         "",
+        f"Observed: `{_cell(report.get('started_at'))}`",
+        "",
         f"Research source: `{_cell(provider)}`",
         f"Requested mode: `{_cell(requested_provider)}`; deep web scan active: `{_cell(deep_research_active)}`",
         "",
