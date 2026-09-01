@@ -80,15 +80,35 @@ class Bundler:
     def __init__(self):
         self.calls = 0
 
-    def fetch(self, token_address, chain):
+    def fetch(self, token_address, chain, **kwargs):
         self.calls += 1
         return {
             "status": "complete",
             "provider": self.provider_name,
+            "chain": chain,
+            "analysis_version": (
+                "robinhood-links-v1" if chain == "robinhood" else "solana-links-v1"
+            ),
+            "pair_address": kwargs.get("pair_address"),
             "hard_blockers": [],
             "linked_cluster_count": 0,
+            "blocking_cluster_count": 0,
             "execution_enabled": False,
         }
+
+
+class ResultBundler(Bundler):
+    def __init__(self, status="complete", blockers=None):
+        super().__init__()
+        self.status = status
+        self.blockers = list(blockers or [])
+
+    def fetch(self, token_address, chain, **kwargs):
+        result = super().fetch(token_address, chain, **kwargs)
+        result["status"] = self.status
+        result["hard_blockers"] = list(self.blockers)
+        result["blocking_cluster_count"] = len(self.blockers)
+        return result
 
 
 class IncompleteFreshSolanaSecurity:
@@ -167,7 +187,7 @@ def test_venue_watch_alerts_once_and_reuses_completed_bundler(tmp_path, monkeypa
 
     first_by_venue = {item["venue"]: item for item in first["candidates"]}
     assert first_by_venue["pump_fun"]["signal_status"] == "screened_research"
-    assert first_by_venue["robinhood_chain"]["signal_status"] == "research_now"
+    assert first_by_venue["robinhood_chain"]["signal_status"] == "screened_research"
     assert first["notification"]["candidate_count"] == 2
     assert second["notification"]["notify"] is False
     assert downgraded["notification"]["safety_downgrade_count"] == 2
@@ -175,7 +195,7 @@ def test_venue_watch_alerts_once_and_reuses_completed_bundler(tmp_path, monkeypa
         item["notification_kind"] == "safety_downgrade"
         for item in downgraded["notification"]["candidates"]
     )
-    assert bundler.calls == 1
+    assert bundler.calls == 2
 
 
 def test_venue_watch_blocks_failed_contract_security(tmp_path, monkeypatch):
@@ -190,6 +210,56 @@ def test_venue_watch_blocks_failed_contract_security(tmp_path, monkeypatch):
     assert candidate["signal_status"] == "blocked_security"
     assert candidate["token_security"]["hard_blockers"] == ["honeypot_detected"]
     assert report["notification"]["notify"] is False
+
+
+def test_robinhood_wallet_check_runs_even_when_security_is_incomplete(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "radar.db")
+    bundler = ResultBundler()
+    report = run_venue_watch(
+        provider=Provider([_candidate("robinhood_chain", "robinhood", ROBINHOOD)]),
+        security_provider=Security(blocked={ROBINHOOD}),
+        bundler_provider=bundler,
+    )
+
+    candidate = report["candidates"][0]
+    assert bundler.calls == 1
+    assert candidate["signal_status"] == "blocked_security"
+    assert candidate["bundler_analysis"]["status"] == "complete"
+    assert "wallet check completed" in candidate["gate_reason"]
+
+
+def test_robinhood_partial_wallet_coverage_stays_research_now(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "radar.db")
+    report = run_venue_watch(
+        provider=Provider([_candidate("robinhood_chain", "robinhood", ROBINHOOD)]),
+        security_provider=Security(),
+        bundler_provider=ResultBundler(status="partial"),
+    )
+
+    candidate = report["candidates"][0]
+    assert candidate["signal_status"] == "research_now"
+    assert "incomplete" in candidate["gate_reason"]
+
+
+def test_robinhood_concentrated_link_blocks_after_security_passes(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "radar.db")
+    report = run_venue_watch(
+        provider=Provider([_candidate("robinhood_chain", "robinhood", ROBINHOOD)]),
+        security_provider=Security(),
+        bundler_provider=ResultBundler(
+            blockers=["same_block_acquisition_concentration"]
+        ),
+    )
+
+    candidate = report["candidates"][0]
+    assert candidate["signal_status"] == "blocked_linked_wallets"
+    assert candidate["bundler_analysis"]["blocking_cluster_count"] == 1
 
 
 def test_complete_helius_holders_fill_only_fresh_solana_distribution_gap(
@@ -267,5 +337,10 @@ def test_phone_report_includes_exact_contract_and_remaining_link_check():
 
     assert ROBINHOOD in markdown
     assert "Robinhood Chain" in markdown
-    assert "RESEARCH NOW — MANUAL LINK CHECK" in markdown
+    assert "RESEARCH NOW — LINK CHECK INCOMPLETE" in markdown
+    assert "| Linked-wallet provider | n/a |" in markdown
+    assert "| Linked clusters / blockers | 0 / 0 |" in markdown
+    assert "| Gate reason | Market and contract checks passed. |" in markdown
+    assert "Missing history remains unknown—not safe" in markdown
+    assert "not proof of common ownership" in markdown
     assert "No wallet, private key, order, or automatic execution" in markdown

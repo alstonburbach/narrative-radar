@@ -24,6 +24,8 @@ jobs:
     env:
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      ROBINHOOD_RPC_URL: ${{ secrets.ROBINHOOD_RPC_URL }}
+      ROBINHOOD_BLOCKSCOUT_API_KEY: ${{ secrets.ROBINHOOD_BLOCKSCOUT_API_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

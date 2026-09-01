@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      ROBINHOOD_RPC_URL: ${{ secrets.ROBINHOOD_RPC_URL }}
+      ROBINHOOD_BLOCKSCOUT_API_KEY: ${{ secrets.ROBINHOOD_BLOCKSCOUT_API_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -67,7 +69,8 @@ jobs:
               handle.write(f"- Ranked candidates: `{report.get('candidate_count', 0)}`\n")
               handle.write(f"- GoPlus scans: `{report.get('security_scans', 0)}`\n")
               handle.write(f"- Helius holder scans: `{report.get('holder_scans', 0)}`\n")
-              handle.write(f"- Helius linked-wallet scans: `{report.get('bundler_scans', 0)}`\n")
+              handle.write(f"- Bounded linked-wallet scans: `{report.get('bundler_scans', 0)}`\n")
+              handle.write(f"- Linked-wallet scans by chain: `{report.get('bundler_scans_by_chain', {})}`\n")
               handle.write(f"- New alerts: `{notification.get('candidate_count', 0)}`\n")
               handle.write("- Execution enabled: `false`\n")
           PY
