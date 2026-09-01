@@ -29,6 +29,17 @@ _STATUS_ORDER = {
     "blocked_market_risk": 2,
 }
 
+_EARLY_PAIR_MIN_MINUTES = 2
+_EARLY_PAIR_MAX_MINUTES = 12
+_MIN_DEX_VOLUME_1H_USD = 10_000
+_MIN_DEX_TRANSACTIONS_1H = 50
+_MIN_PUMP_MARKET_CAP_USD = 10_000
+_MIN_PUMP_TRANSACTIONS_1H = 100
+_MIN_BUY_SELL_RATIO = 1.10
+_MAX_FIVE_MINUTE_DRAWDOWN_PCT = -10
+_MAX_SINCE_LAUNCH_DRAWDOWN_PCT = -15
+_MAX_SINCE_LAUNCH_RUN_UP_PCT = 100
+
 
 def _number(value: Any) -> float | None:
     try:
@@ -130,28 +141,42 @@ def _market_screen(candidate: dict, observed_at: datetime) -> dict:
         cautions.append("Liquidity is below $10,000.")
     if volume_1h is None:
         cautions.append("One-hour volume is unavailable.")
-    elif volume_1h < 5_000:
-        cautions.append("One-hour volume is below $5,000.")
-    if transactions_1h < 25:
-        cautions.append("Fewer than 25 one-hour trades are visible.")
-    if transactions_1h >= 30 and sells_1h > max(10, buys_1h * 2.5):
-        blockers.append("heavy_sell_pressure")
-    if price_change_5m is not None and price_change_5m <= -35:
-        blockers.append("rapid_five_minute_drawdown")
-    if price_change_1h is not None and price_change_1h <= -60:
-        blockers.append("severe_one_hour_drawdown")
-    elif price_change_1h is not None and price_change_1h >= 300:
-        blockers.append("extreme_one_hour_run_up")
-    elif price_change_1h is not None and price_change_1h >= 150:
-        cautions.append("The one-hour move is extended and vulnerable to reversal.")
+    elif volume_1h < _MIN_DEX_VOLUME_1H_USD:
+        cautions.append("One-hour volume is below $10,000.")
+    required_transactions = (
+        _MIN_PUMP_TRANSACTIONS_1H if bonding_curve else _MIN_DEX_TRANSACTIONS_1H
+    )
+    if transactions_1h < required_transactions:
+        cautions.append(
+            f"Fewer than {required_transactions} early trades are visible."
+        )
+    if sells_1h > 0 and buys_1h < sells_1h * _MIN_BUY_SELL_RATIO:
+        cautions.append("Early buy flow is not leading sell flow.")
+    if price_change_5m is None or price_change_1h is None:
+        cautions.append("Early momentum data is incomplete.")
+    if (
+        price_change_5m is not None
+        and price_change_5m <= _MAX_FIVE_MINUTE_DRAWDOWN_PCT
+    ):
+        blockers.append("early_five_minute_breakdown")
+    if (
+        price_change_1h is not None
+        and price_change_1h <= _MAX_SINCE_LAUNCH_DRAWDOWN_PCT
+    ):
+        blockers.append("early_since_launch_breakdown")
+    elif (
+        price_change_1h is not None
+        and price_change_1h >= _MAX_SINCE_LAUNCH_RUN_UP_PCT
+    ):
+        blockers.append("early_run_up_already_extended")
     if market_cap and liquidity and market_cap / liquidity > 100:
         blockers.append("extreme_market_cap_to_liquidity")
     if pair_age_minutes is None:
         cautions.append("Pair age could not be verified.")
-    elif pair_age_minutes < 2:
+    elif pair_age_minutes < _EARLY_PAIR_MIN_MINUTES:
         cautions.append("The pair is under two minutes old and needs more observations.")
-    elif pair_age_minutes > 72 * 60:
-        blockers.append("pair_is_not_a_recent_launch")
+    elif pair_age_minutes > _EARLY_PAIR_MAX_MINUTES:
+        blockers.append("outside_early_launch_window")
 
     score = 0
     score += 20
@@ -164,25 +189,50 @@ def _market_screen(candidate: dict, observed_at: datetime) -> dict:
     score += 15 if transactions_1h >= 25 else 5
     score += 10 if buys_1h >= sells_1h else 3
     if pair_age_minutes is not None:
-        score += 15 if 2 <= pair_age_minutes <= 24 * 60 else 5
-    score = max(0, min(score - 20 * len(blockers), 100))
+        score += (
+            15
+            if _EARLY_PAIR_MIN_MINUTES
+            <= pair_age_minutes
+            <= _EARLY_PAIR_MAX_MINUTES
+            else 5
+        )
+    score = max(
+        0,
+        min(score - 20 * len(blockers) - 5 * len(cautions), 100),
+    )
 
     if blockers:
         status = "blocked_market_risk"
     elif (
         (
-            (liquidity is not None and liquidity >= 10_000)
+            (
+                not bonding_curve
+                and liquidity is not None
+                and liquidity >= 10_000
+                and transactions_1h >= _MIN_DEX_TRANSACTIONS_1H
+            )
             or (
                 bonding_curve
-                and sells_1h >= 5
-                and transactions_1h >= 50
+                and market_cap is not None
+                and market_cap >= _MIN_PUMP_MARKET_CAP_USD
+                and sells_1h >= 10
+                and transactions_1h >= _MIN_PUMP_TRANSACTIONS_1H
             )
         )
         and volume_1h is not None
-        and volume_1h >= 5_000
-        and transactions_1h >= 25
+        and volume_1h >= _MIN_DEX_VOLUME_1H_USD
+        and sells_1h > 0
+        and buys_1h >= sells_1h * _MIN_BUY_SELL_RATIO
+        and price_change_5m is not None
+        and price_change_5m > _MAX_FIVE_MINUTE_DRAWDOWN_PCT
+        and price_change_1h is not None
+        and _MAX_SINCE_LAUNCH_DRAWDOWN_PCT
+        < price_change_1h
+        < _MAX_SINCE_LAUNCH_RUN_UP_PCT
         and pair_age_minutes is not None
-        and 2 <= pair_age_minutes <= 72 * 60
+        and _EARLY_PAIR_MIN_MINUTES
+        <= pair_age_minutes
+        <= _EARLY_PAIR_MAX_MINUTES
     ):
         status = "research_next"
     else:
