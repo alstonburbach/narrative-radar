@@ -202,6 +202,7 @@ STOP_WORDS = {
     "bitcoin",
     "base",
     "bsc",
+    "robinhood",
     "with",
     "your",
     "public",

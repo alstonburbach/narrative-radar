@@ -13,7 +13,15 @@ from app.paper_signal import PAPER_SIGNAL_VERSION, validate_paper_signal_state
 
 _EVM_ADDRESS = re.compile(r"^0x[a-fA-F0-9]{40}$")
 _SOLANA_ADDRESS = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
-_SUPPORTED_CHAINS = {"auto", "unknown", "solana", "base", "ethereum", "bsc"}
+_SUPPORTED_CHAINS = {
+    "auto",
+    "unknown",
+    "solana",
+    "robinhood",
+    "base",
+    "ethereum",
+    "bsc",
+}
 _NO_RESPONSE_VALUES = {"", "_no response_", "no response", "none", "n/a"}
 _STATE_MARKER = re.compile(
     r"<!-- narrative-radar-paper-state:([A-Za-z0-9_-]+) -->"
@@ -67,7 +75,7 @@ def _validated_contract(value: str | None, chain: str) -> str:
         raise ValueError("Contract must be a valid EVM 0x address or Solana mint address.")
     if chain == "solana" and not is_solana:
         raise ValueError("The Solana chain selection requires a Solana mint address.")
-    if chain in {"base", "ethereum", "bsc"} and not is_evm:
+    if chain in {"robinhood", "base", "ethereum", "bsc"} and not is_evm:
         raise ValueError(f"The {chain} chain selection requires an EVM 0x address.")
     return contract
 
@@ -77,7 +85,9 @@ def parse_paper_signal_request(body: str) -> dict:
     sections = _sections(body)
     chain = str(_section_value(sections, "Chain") or "auto").strip().lower()
     if chain not in _SUPPORTED_CHAINS:
-        raise ValueError("Chain must be auto, solana, base, ethereum, or bsc.")
+        raise ValueError(
+            "Chain must be auto, solana, robinhood, base, ethereum, or bsc."
+        )
     normalized_chain = "unknown" if chain in {"auto", "unknown"} else chain
     contract = _validated_contract(
         _section_value(sections, "Contract address"),

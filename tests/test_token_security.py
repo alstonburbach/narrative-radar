@@ -82,6 +82,17 @@ def test_safe_evm_report_normalizes_taxes_holders_and_locked_lp():
     assert session.calls[0][1]["params"] == {"contract_addresses": CONTRACT}
 
 
+def test_robinhood_chain_uses_current_goplus_chain_id():
+    session = Session(_evm_payload())
+    report = GoPlusTokenSecurityProvider(session=session).fetch(
+        CONTRACT, "robinhood"
+    )
+
+    assert report["status"] == "complete"
+    assert report["chain"] == "robinhood"
+    assert session.calls[0][0].endswith("/4663")
+
+
 def test_evm_honeypot_admin_tax_concentration_and_unlocked_lp_block():
     payload = _evm_payload(
         is_honeypot="1",

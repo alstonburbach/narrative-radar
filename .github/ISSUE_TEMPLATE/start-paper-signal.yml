@@ -24,6 +24,7 @@ body:
       options:
         - auto
         - solana
+        - robinhood
         - base
         - ethereum
         - bsc

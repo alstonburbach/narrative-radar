@@ -6,7 +6,15 @@ from math import isfinite
 from typing import Any
 from urllib.parse import urlparse
 
-_SUPPORTED_CHAINS = {"auto", "unknown", "solana", "base", "ethereum", "bsc"}
+_SUPPORTED_CHAINS = {
+    "auto",
+    "unknown",
+    "solana",
+    "robinhood",
+    "base",
+    "ethereum",
+    "bsc",
+}
 _NO_RESPONSE_VALUES = {"", "_no response_", "no response", "none", "n/a"}
 
 
@@ -47,7 +55,9 @@ def parse_discovery_request(body: str) -> dict:
 
     chain = str(_section_value(sections, "Chain") or "auto").strip().lower()
     if chain not in _SUPPORTED_CHAINS:
-        raise ValueError("Chain must be auto, solana, base, ethereum, or bsc.")
+        raise ValueError(
+            "Chain must be auto, solana, robinhood, base, ethereum, or bsc."
+        )
     normalized_chain = "unknown" if chain in {"auto", "unknown"} else chain
 
     limit_text = str(_section_value(sections, "Results per research lens") or "5")

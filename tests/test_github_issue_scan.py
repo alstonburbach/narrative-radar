@@ -64,6 +64,18 @@ def test_issue_request_rejects_chain_address_mismatch_and_invalid_amount():
         parse_issue_scan_request(invalid_amount)
 
 
+def test_phone_scan_accepts_robinhood_chain_evm_contract():
+    body = BODY.replace(
+        "9b6CWNzoTarGJ7KacCkegJt8Js3g9j52MpxQFmhEpump",
+        "0x1111111111111111111111111111111111111111",
+    ).replace("solana", "robinhood")
+
+    request = parse_issue_scan_request(body)
+
+    assert request["chain"] == "robinhood"
+    assert request["contract_address"].startswith("0x")
+
+
 def test_phone_report_surfaces_gate_risk_and_disabled_execution():
     report = {
         "market": {

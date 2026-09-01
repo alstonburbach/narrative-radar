@@ -17,6 +17,7 @@ EVM_CHAIN_IDS = {
     "ethereum": "1",
     "bsc": "56",
     "base": "8453",
+    "robinhood": "4663",
 }
 _ZERO_ADDRESSES = {
     "",
@@ -511,6 +512,24 @@ def _solana_report(item: Mapping[str, Any]) -> dict:
             )
         )
 
+    authority_data_complete = (
+        _truth(item.get("non_transferable")) is not None
+        and all(
+            _truth(item.get(field)) is not None
+            for field in (
+                "balance_mutable_authority",
+                "closable",
+                "freezable",
+                "mintable",
+                "default_account_state_upgradable",
+                "transfer_fee_upgradable",
+                "transfer_hook_upgradable",
+            )
+        )
+        and "transfer_fee" in item
+        and "transfer_hook" in item
+    )
+
     return {
         "data_complete": (
             holder_metrics["row_count"] > 0
@@ -518,6 +537,7 @@ def _solana_report(item: Mapping[str, Any]) -> dict:
             and _truth(item.get("freezable")) is not None
             and _truth(item.get("balance_mutable_authority")) is not None
         ),
+        "authority_data_complete": authority_data_complete,
         "trusted_token": _truth(item.get("trusted_token")) is True,
         "holder_count": _number(item.get("holder_count")),
         "holder_distribution": holder_metrics,
