@@ -102,6 +102,33 @@ def test_phone_report_surfaces_gate_risk_and_disabled_execution():
         },
         "research": {"error": None},
         "onchain_activity": {"status": "not_requested"},
+        "token_security": {
+            "status": "complete",
+            "hard_blockers": [],
+            "holder_distribution": {},
+            "lp_distribution": {},
+            "bundler_analysis": {
+                "status": "complete",
+                "provider": "helius",
+                "note": "Bounded observable-link check completed.",
+                "launch_transactions_scanned": 100,
+                "launch_transaction_limit": 200,
+                "first_acquisition_owner_count": 24,
+                "funding_wallets_checked": 12,
+                "funding_wallets_requested": 12,
+                "linked_cluster_count": 1,
+                "blocking_cluster_count": 0,
+                "largest_cluster_supply_share_pct": 1.25,
+                "clusters": [
+                    {
+                        "type": "same_slot_first_acquisition",
+                        "owner_count": 3,
+                        "concentration_share_pct": 1.25,
+                        "hard_blocker": False,
+                    }
+                ],
+            },
+        },
         "narrative": {"verified_evidence": [], "uncertain_evidence": []},
     }
 
@@ -111,6 +138,9 @@ def test_phone_report_surfaces_gate_risk_and_disabled_execution():
     assert "$250.0K" in markdown
     assert "Review concentration" in markdown
     assert "Execution enabled: `False`" in markdown
+    assert "Earliest token transactions checked: `100` / limit `200`" in markdown
+    assert "Observable linked clusters / blockers: `1` / `0`" in markdown
+    assert "same_slot_first_acquisition" in markdown
     assert "No transaction was created" in markdown
 
 

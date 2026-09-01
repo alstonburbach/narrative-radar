@@ -13,6 +13,7 @@ AI-assisted crypto narrative intelligence and paper-analysis platform.
 - Fetches selected primary/on-chain/secondary leads and checks whether the project identity appears in the underlying page, while keeping that content match separate from official verification.
 - Persists compact evidence snapshots and reports whether a narrative is strengthening, weakening, or still too new to judge across repeated runs.
 - On Solana, optionally records holder counts, token-account scan coverage, token supply, and bounded finalized transfer activity as separate on-chain activity proxies.
+- Uses Helius to inspect the earliest bounded Solana token transactions, group first-acquisition owners by shared fee payer, transaction, and slot, and trace bounded pre-acquisition SOL funding for the largest early wallets. Concentrated observable links block promotion; weak same-slot patterns remain review warnings.
 - Persists discovery scans and reports which candidate signals survive across repeated independent runs.
 - Runs narrative discovery from an owner-only phone issue form and posts material scheduled discoveries to one GitHub feed issue.
 - Scans free public feeds every four hours and runs one deeper Tavily-backed web scan daily when its key is configured, while notifying only on material evidence-backed changes.
@@ -114,9 +115,16 @@ fails closed when that report is unavailable and blocks high-risk findings such
 as honeypot behavior, restrictive selling, severe taxes, closed or mutable
 contract controls, exposed liquidity ownership, or concentrated holders. These
 are heuristics, not proof that a token is safe or fraudulent. GoPlus holder data
-does not establish whether apparently separate wallets were funded together or
-bought in the same bundle, so `bundler_concentration` remains a required manual
-review item until a reliable linked-wallet adapter is added.
+alone does not establish whether apparently separate wallets were funded
+together or bought in the same bundle. When `HELIUS_API_KEY` is configured for
+a Solana scan, Narrative Radar adds a bounded launch-window adapter: it checks
+the earliest token transactions, shared fee payers, multi-wallet transactions,
+same-slot first acquisitions, and recent SOL funding sources for the largest
+early wallets. A concentrated cluster blocks promotion; incomplete coverage
+leaves `bundler_concentration` in manual review. Shared funders or same-slot
+activity can come from exchanges, sponsored transactions, airdrops, routers, or
+organic high-throughput trading, so these are observable risk links—not proof
+of common ownership or fraud.
 
 Pass `--order-preview-usd 100` and optionally `--order-side sell` to `app.main` to generate a paper-only proposal. It includes the selected pair, reference price, estimated token quantity, a five-minute market-snapshot freshness gate, liquidity-size checks, and explicit blocking conditions. It never checks balances, estimates exact slippage, signs a transaction, or submits an order. Every preview requires manual approval and reports `execution_enabled: false`.
 

@@ -131,3 +131,69 @@ def test_run_analysis_persists_optional_solana_activity_snapshot(monkeypatch):
     assert report["onchain_activity"]["snapshot_id"] == 2
     assert report["onchain_activity"]["history"]["state"] == "no_history"
     assert report["onchain_activity"]["holder_count"] == 20
+
+
+def test_run_analysis_merges_detected_linked_wallet_blockers(monkeypatch):
+    market = {
+        "found": True,
+        "contract_address": "mint",
+        "token_name": "Linked Test",
+        "token_symbol": "LINKT",
+        "chain": "solana",
+        "dex": "raydium",
+        "pair_address": "pair",
+        "price_usd": 0.01,
+        "market_cap": 100_000,
+        "fdv": 100_000,
+        "liquidity_usd": 50_000,
+        "volume_24h": 200_000,
+        "price_change_24h": 15,
+        "collected_at": datetime.now(timezone.utc).isoformat(),
+    }
+    monkeypatch.setattr("app.pipeline.fetch_market_data", lambda *args, **kwargs: dict(market))
+
+    class AdoptionProvider:
+        def fetch_snapshot(self, **kwargs):
+            return {
+                "token_address": "mint",
+                "chain": "solana",
+                "observed_at": "2026-08-27T00:00:00+00:00",
+                "status": "complete",
+            }
+
+    class BundlerProvider:
+        provider_name = "fake-helius"
+
+        def fetch(self, token_address, chain):
+            assert token_address == "mint"
+            assert chain == "solana"
+            return {
+                "status": "complete",
+                "provider": self.provider_name,
+                "hard_blockers": ["shared_funder_concentration"],
+                "flags": [
+                    {
+                        "code": "shared_funder_concentration",
+                        "severity": "high",
+                        "message": "Concentrated early-wallet links require review.",
+                        "details": {"owner_count": 3},
+                    }
+                ],
+                "execution_enabled": False,
+            }
+
+    report = run_analysis(
+        "mint",
+        chain="solana",
+        adoption_provider=AdoptionProvider(),
+        bundler_provider=BundlerProvider(),
+        security_provider=FakeSecurityProvider(),
+        persist=False,
+    )
+
+    assert report["token_security"]["bundler_analysis"]["status"] == "complete"
+    assert "shared_funder_concentration" in report["token_security"]["hard_blockers"]
+    assert report["token_security"]["promotion_eligible"] is False
+    assert report["token_security"]["risk_level"] == "high"
+    assert report["red_team"]["risk_level"] == "high"
+    assert "token_security" in report["decision_gate"]["blocking_failures"]
