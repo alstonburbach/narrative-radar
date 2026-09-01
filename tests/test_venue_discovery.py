@@ -35,7 +35,17 @@ class Session:
         raise AssertionError(f"unexpected URL: {url}")
 
 
-def _pair(chain, address, *, dex, created_at, drawdown=2):
+def _pair(
+    chain,
+    address,
+    *,
+    dex,
+    created_at,
+    drawdown=2,
+    hour_change=10,
+    buys=55,
+    sells=10,
+):
     return {
         "chainId": chain,
         "dexId": dex,
@@ -48,15 +58,15 @@ def _pair(chain, address, *, dex, created_at, drawdown=2):
         "fdv": 100_000,
         "liquidity": {"usd": 20_000},
         "volume": {"h1": 15_000, "h6": 20_000, "h24": 20_000},
-        "txns": {"h1": {"buys": 30, "sells": 10}},
-        "priceChange": {"m5": drawdown, "h1": 10, "h6": 10},
+        "txns": {"h1": {"buys": buys, "sells": sells}},
+        "priceChange": {"m5": drawdown, "h1": hour_change, "h6": 10},
         "pairCreatedAt": created_at,
     }
 
 
 def test_venue_collector_keeps_exact_robinhood_and_pumpfun_contracts():
     observed = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
-    created = int(datetime(2026, 9, 1, 11, tzinfo=timezone.utc).timestamp() * 1000)
+    created = int(datetime(2026, 9, 1, 11, 54, tzinfo=timezone.utc).timestamp() * 1000)
     profiles = [
         {
             "chainId": "robinhood",
@@ -97,12 +107,12 @@ def test_venue_collector_keeps_exact_robinhood_and_pumpfun_contracts():
         item["market_screen"]["status"] == "research_next"
         for item in report["candidates"]
     )
-    assert by_venue["pump_fun"]["pair_age_minutes"] == 60
+    assert by_venue["pump_fun"]["pair_age_minutes"] == 6
 
 
 def test_venue_collector_blocks_profile_without_pair_and_fast_drawdown():
     observed = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
-    created = int(datetime(2026, 9, 1, 11, tzinfo=timezone.utc).timestamp() * 1000)
+    created = int(datetime(2026, 9, 1, 11, 54, tzinfo=timezone.utc).timestamp() * 1000)
     second = "0x2222222222222222222222222222222222222222"
     profiles = [
         {"chainId": "robinhood", "tokenAddress": ROBINHOOD},
@@ -135,7 +145,7 @@ def test_venue_collector_blocks_profile_without_pair_and_fast_drawdown():
 
 def test_active_pumpfun_bonding_curve_can_advance_without_fake_liquidity():
     observed = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
-    created = int(datetime(2026, 9, 1, 11, tzinfo=timezone.utc).timestamp() * 1000)
+    created = int(datetime(2026, 9, 1, 11, 54, tzinfo=timezone.utc).timestamp() * 1000)
     pair = _pair("solana", PUMP, dex="pumpfun", created_at=created)
     pair["liquidity"] = {}
     pair["txns"]["h1"] = {"buys": 100, "sells": 40}
@@ -153,4 +163,59 @@ def test_active_pumpfun_bonding_curve_can_advance_without_fake_liquidity():
     assert any(
         "bonding curve" in caution
         for caution in candidate["market_screen"]["cautions"]
+    )
+
+
+def test_venue_collector_blocks_old_launches_and_demotes_sell_led_pairs():
+    observed = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+    old_created = int(
+        datetime(2026, 9, 1, 11, 47, tzinfo=timezone.utc).timestamp() * 1000
+    )
+    fresh_created = int(
+        datetime(2026, 9, 1, 11, 54, tzinfo=timezone.utc).timestamp() * 1000
+    )
+    second = "0x2222222222222222222222222222222222222222"
+    profiles = [
+        {"chainId": "robinhood", "tokenAddress": ROBINHOOD},
+        {"chainId": "robinhood", "tokenAddress": second},
+    ]
+    pairs = {
+        "robinhood": [
+            _pair(
+                "robinhood",
+                ROBINHOOD,
+                dex="uniswap",
+                created_at=old_created,
+            ),
+            _pair(
+                "robinhood",
+                second,
+                dex="uniswap",
+                created_at=fresh_created,
+                buys=40,
+                sells=60,
+            ),
+        ]
+    }
+
+    report = DexScreenerVenueProvider(
+        session=Session(profiles, pairs)
+    ).collect(observed_at=observed)
+    by_address = {item["contract_address"]: item for item in report["candidates"]}
+
+    assert (
+        "outside_early_launch_window"
+        in by_address[ROBINHOOD]["market_screen"]["blockers"]
+    )
+    assert (
+        by_address[ROBINHOOD]["market_screen"]["status"]
+        == "blocked_market_risk"
+    )
+    assert (
+        by_address[second]["market_screen"]["status"]
+        == "watch_for_confirmation"
+    )
+    assert any(
+        "buy flow" in caution
+        for caution in by_address[second]["market_screen"]["cautions"]
     )
