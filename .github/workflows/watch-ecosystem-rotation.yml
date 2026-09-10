@@ -8,6 +8,7 @@ on:
       - ".github/workflows/watch-ecosystem-rotation.yml"
       - "app/ecosystem_watch_main.py"
       - "app/market_rotation.py"
+      - "app/market_rotation_history.py"
       - "app/collectors/ecosystem_activity.py"
   schedule:
     - cron: "17 * * * *"
@@ -32,6 +33,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Restore ecosystem history
+        uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-ecosystem-db-${{ github.run_id }}
+          restore-keys: |
+            narrative-radar-ecosystem-db-
+            narrative-radar-launch-db-
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Collect multi-chain ecosystem activity
@@ -67,8 +76,9 @@ jobs:
           for row in market.get("chains") or []:
               rot = row.get("rotation") or {}
               status = str(rot.get("status") or "insufficient_data")
+              samples = row.get("baseline_sample_count", 0)
               lines.append(
-                  f"- **{row.get('chain')}** — {labels.get(status, status)} · score `{rot.get('score', 0)}`"
+                  f"- **{row.get('chain')}** — {labels.get(status, status)} · score `{rot.get('score', 0)}` · history `{samples}`"
               )
           lines.extend(["", "## Launchpads / venues"])
           venues = market.get("venues") or []
@@ -77,8 +87,9 @@ jobs:
           for row in venues:
               rot = row.get("rotation") or {}
               status = str(rot.get("status") or "insufficient_data")
+              samples = row.get("baseline_sample_count", 0)
               lines.append(
-                  f"- **{row.get('venue')}** on {row.get('chain')} — {labels.get(status, status)} · score `{rot.get('score', 0)}`"
+                  f"- **{row.get('venue')}** on {row.get('chain')} — {labels.get(status, status)} · score `{rot.get('score', 0)}` · history `{samples}`"
               )
           failures = data.get("failures") or []
           if failures:
