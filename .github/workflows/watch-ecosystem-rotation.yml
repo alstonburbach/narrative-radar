@@ -1,0 +1,131 @@
+name: watch ecosystem rotation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/watch-ecosystem-rotation.yml"
+      - "app/ecosystem_watch_main.py"
+      - "app/market_rotation.py"
+      - "app/collectors/ecosystem_activity.py"
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: narrative-radar-ecosystem-rotation
+  cancel-in-progress: false
+
+jobs:
+  rotation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Collect multi-chain ecosystem activity
+        run: >-
+          python -m app.ecosystem_watch_main
+          --chains solana,robinhood,base,ethereum,bsc
+          --json > ecosystem-rotation.json
+      - name: Render phone-friendly report
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("ecosystem-rotation.json").read_text())
+          market = data.get("market_rotation") or {}
+          labels = {
+              "hot": "🔥 HOT",
+              "coming_up": "🚀 COMING UP",
+              "active": "🟢 ACTIVE",
+              "watch": "👀 WATCH",
+              "cooling": "📉 COOLING",
+              "cold": "💤 COLD",
+              "insufficient_data": "⚪ NEEDS HISTORY",
+          }
+          lines = [
+              "# Narrative Radar — Market Rotation",
+              "",
+              "> Research context only. Ecosystem momentum never overrides token safety gates.",
+              "",
+              "## Chains",
+          ]
+          for row in market.get("chains") or []:
+              rot = row.get("rotation") or {}
+              status = str(rot.get("status") or "insufficient_data")
+              lines.append(
+                  f"- **{row.get('chain')}** — {labels.get(status, status)} · score `{rot.get('score', 0)}`"
+              )
+          lines.extend(["", "## Launchpads / venues"])
+          venues = market.get("venues") or []
+          if not venues:
+              lines.append("- No explicitly identified launchpad rows in this provider pass.")
+          for row in venues:
+              rot = row.get("rotation") or {}
+              status = str(rot.get("status") or "insufficient_data")
+              lines.append(
+                  f"- **{row.get('venue')}** on {row.get('chain')} — {labels.get(status, status)} · score `{rot.get('score', 0)}`"
+              )
+          failures = data.get("failures") or []
+          if failures:
+              lines.extend(["", "## Provider gaps"])
+              for failure in failures:
+                  lines.append(
+                      f"- {failure.get('chain')}: provider failed; this is **unknown**, not zero activity."
+                  )
+          lines.extend(["", "Execution enabled: `false`", ""])
+          Path("ecosystem-rotation.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+      - name: Refresh phone rotation issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = '[RADAR MARKET ROTATION] Chains + Launchpads';
+            const body = fs.readFileSync('ecosystem-rotation.md', 'utf8');
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 100,
+            });
+            const existing = issues.find(
+              issue => !issue.pull_request && issue.title === title
+            );
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                assignees: [context.repo.owner],
+              });
+            }
+      - name: Upload rotation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-ecosystem-rotation-${{ github.run_id }}
+          path: |
+            ecosystem-rotation.json
+            ecosystem-rotation.md
