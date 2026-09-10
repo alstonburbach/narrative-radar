@@ -1,0 +1,127 @@
+name: find new coins now
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_index:
+        description: "0=current first batch, 1=next batch, 2=next after that"
+        required: false
+        default: "1"
+      batch_size:
+        description: "Number of candidates to inspect (1-10)"
+        required: false
+        default: "5"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: narrative-radar-find-new-coins
+  cancel-in-progress: true
+
+jobs:
+  refresh-selection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      ROBINHOOD_RPC_URL: ${{ secrets.ROBINHOOD_RPC_URL }}
+      ROBINHOOD_BLOCKSCOUT_API_KEY: ${{ secrets.ROBINHOOD_BLOCKSCOUT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore Narra history
+        uses: actions/cache@v4
+        with:
+          path: data/narrative_radar.db
+          key: narrative-radar-fresh-db-${{ github.run_id }}
+          restore-keys: |
+            narrative-radar-launch-db-
+            narrative-radar-ecosystem-db-
+      - run: python -m pip install -r requirements.txt
+      - name: Find a different current candidate batch
+        run: >-
+          python -m app.fresh_candidate_batch_main
+          --batch-index "${{ inputs.batch_index }}"
+          --batch-size "${{ inputs.batch_size }}"
+          --venues pump_fun,robinhood_chain
+          --json > fresh-batch.json
+      - name: Render fresh batch
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("fresh-batch.json").read_text())
+          selection = data.get("candidate_selection") or {}
+          lines = [
+              "# Narra Radar — Fresh Candidate Batch",
+              "",
+              "> Different current candidates, same fail-closed safety pipeline.",
+              "",
+              f"Batch: `{selection.get('batch_index', 0)}` · size `{selection.get('batch_size', 0)}`",
+              "",
+          ]
+          rows = data.get("candidates") or []
+          if not rows:
+              lines.append("No candidates were available in this slice right now.")
+          for idx, row in enumerate(rows, 1):
+              market = row.get("market_screen") or {}
+              security = row.get("token_security") or {}
+              lines.extend([
+                  f"## {idx}. {row.get('token_name') or row.get('token_symbol') or 'Unknown'} ({row.get('token_symbol') or '?'})",
+                  f"- Status: **{row.get('signal_status') or 'unknown'}**",
+                  f"- Chain / venue: `{row.get('chain')}` / `{row.get('venue')}`",
+                  f"- Market cap: `{row.get('market_cap')}`",
+                  f"- 1h volume: `{row.get('volume_1h')}`",
+                  f"- Market score: `{market.get('score')}`",
+                  f"- Security: `{security.get('status')}`",
+                  f"- Contract: `{row.get('contract_address')}`",
+                  "",
+              ])
+          lines.extend([
+              "---",
+              "This report does not place trades. A fresh batch is not automatically better than the previous batch.",
+              "Execution enabled: `false`",
+          ])
+          Path("fresh-batch.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+      - name: Publish phone-friendly fresh list
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = '[RADAR FRESH COINS] On-demand candidate batch';
+            const body = fs.readFileSync('fresh-batch.md', 'utf8');
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 100,
+            });
+            const existing = issues.find(i => !i.pull_request && i.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'open',
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                assignees: [context.repo.owner],
+              });
+            }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: narrative-radar-fresh-batch-${{ github.run_id }}
+          path: |
+            fresh-batch.json
+            fresh-batch.md
